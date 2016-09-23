@@ -1,0 +1,13 @@
+version: '2'
+services:
+  api:
+    extends:
+      file: docker-compose-base.yml
+      service: api
+    links:
+      - datastore
+    environment:
+      - SCALA_ENV=dev
+    build:
+      context: .
+      dockerfile: Dockerfile

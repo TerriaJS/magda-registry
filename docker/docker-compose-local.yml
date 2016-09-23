@@ -1,0 +1,20 @@
+version: '2'
+services:
+  api:
+    extends:
+      file: docker-compose-base.yml
+      service: api
+    links:
+      - datastore
+    environment:
+      - SCALA_ENV=local
+    build:
+      context: .
+      dockerfile: api.local.dockerfile
+    volumes:
+      - ../:/usr/src/app/
+      - ~/.ivy2/:/root/.ivy2/
+  datastore:
+    extends:
+      file: docker-compose-base.yml
+      service: datastore
