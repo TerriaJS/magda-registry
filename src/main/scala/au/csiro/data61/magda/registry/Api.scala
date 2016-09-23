@@ -61,6 +61,7 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
   val routes = cors() {
     handleExceptions(myExceptionHandler) {
       path("ping")(complete("OK")) ~
+      pathPrefix("sections")(new SectionsService(system, materializer).route) ~
       pathPrefix("datasets")(new DatasetsService(system, materializer).route)
     }
   }
