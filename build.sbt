@@ -17,7 +17,11 @@ libraryDependencies ++= {
     "com.typesafe.akka" %% "akka-http-spray-json-experimental" % akkaV,
     "com.typesafe.akka" %% "akka-http-testkit" % akkaV,
     "ch.megard" %% "akka-http-cors" % "0.1.5",
-    "org.scalatest"     %% "scalatest" % scalaTestV % "test"
+    "org.scalikejdbc" %% "scalikejdbc" % "2.4.2",
+    "org.scalikejdbc" %% "scalikejdbc-config"  % "2.4.2",
+    "ch.qos.logback"  %  "logback-classic" % "1.1.7",
+    "org.postgresql"  %  "postgresql" % "9.4.1211.jre7",
+    "org.scalatest" %% "scalatest" % scalaTestV % "test"
   )
 }
 
