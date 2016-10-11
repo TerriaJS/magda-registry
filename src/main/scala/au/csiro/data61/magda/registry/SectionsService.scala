@@ -6,8 +6,9 @@ import akka.stream.Materializer
 import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
 import spray.json._
+import akka.http.scaladsl.model.StatusCodes
 
-class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols {
+class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols with BadRequestProtocols {
   val route = get {
     pathEnd {
       complete {
@@ -26,6 +27,22 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
   } ~
   put {
     path(Segment) { id =>
+      entity(as[Section]) { section =>
+        if (id != section.id) {
+          complete(StatusCodes.BadRequest, BadRequest("The section's id property does not match the URL."))
+        } else {
+          complete {
+            DB localTx { implicit session =>
+              sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${section.jsonSchema.compactPrint}::json)".update.apply()
+              section
+            }
+          }
+        }
+      }
+    }
+  } ~
+  post {
+    pathEnd {
       entity(as[Section]) { section =>
         complete {
           DB localTx { implicit session =>
