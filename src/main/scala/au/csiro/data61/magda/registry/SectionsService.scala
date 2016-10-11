@@ -1,25 +1,25 @@
 package au.csiro.data61.magda.registry
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.stream.Materializer
 import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
-import spray.json.DefaultJsonProtocol
+import spray.json._
 
-class SectionsService(system: ActorSystem, materializer: Materializer) extends DefaultJsonProtocol with SprayJsonSupport with SectionProtocols {
+class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols {
   val route = get {
     pathEnd {
       complete {
         DB readOnly { implicit session =>
-          sql"select sectionid, name from section".map(rs => rowToSection(rs)).list.apply()
+          sql"select sectionID, name, jsonSchema from Section".map(rs => rowToSection(rs)).list.apply()
         }
       }
     } ~
     path(Segment) { id =>
       complete {
         DB readOnly { implicit session =>
-          sql"select sectionid, name from section where sectionid=${id}".map(rs => rowToSection(rs)).single.apply()
+          sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rs => rowToSection(rs)).single.apply().get
         }
       }
     }
@@ -29,7 +29,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends D
       entity(as[Section]) { section =>
         complete {
           DB localTx { implicit session =>
-            sql"insert into section (sectionid, name) values (${section.id}, ${section.name})".update.apply()
+            sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${section.jsonSchema.compactPrint}::json)".update.apply()
             section
           }
         }
@@ -37,5 +37,5 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends D
     }
   }
 
-  private def rowToSection(rs: WrappedResultSet): Section = new Section(rs.string("sectionid"), rs.string("name"))
+  private def rowToSection(rs: WrappedResultSet): Section = new Section(rs.string("sectionID"), rs.string("name"), JsonParser(rs.string("jsonSchema")).asJsObject)
 }

@@ -29,6 +29,7 @@ import akka.util.Timeout
 import ch.megard.akka.http.cors.CorsDirectives
 import ch.megard.akka.http.cors.CorsSettings
 import scalikejdbc.config._
+import spray.json._
 
 class Api(implicit val config: Config, implicit val system: ActorSystem, implicit val ec: ExecutionContext, implicit val materializer: Materializer) extends CorsDirectives {
   val logger = Logging(system, getClass)
@@ -59,6 +60,20 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
   }
 
   DBs.setupAll()
+
+  case class Foo(name: JsValue)
+
+  object FooProtocol extends DefaultJsonProtocol {
+    implicit val fooFormat = jsonFormat1(Foo)
+  }
+
+  import FooProtocol._
+  val json = Foo(JsonParser("""{"foo": "bar1"}""")).toJson
+  val foo = json.convertTo[Foo]
+  print(foo);
+
+//  val parsed = JsonParser("""{"foo": "bar1"}""")
+//  print(parsed.prettyPrint)
 
   implicit val timeout = Timeout(FiniteDuration(1, TimeUnit.SECONDS))
   val routes = cors() {

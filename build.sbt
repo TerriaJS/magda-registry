@@ -1,4 +1,4 @@
-enablePlugins(JavaAppPackaging)
+enablePlugins(JavaServerAppPackaging)
 
 name := "magda-registry"
 organization := "au.com.csiro.data61"
@@ -25,4 +25,8 @@ libraryDependencies ++= {
   )
 }
 
+EclipseKeys.withJavadoc := true
+EclipseKeys.withSource := true
+
 Revolver.settings
+Revolver.enableDebugging(port = 8000, suspend = false)

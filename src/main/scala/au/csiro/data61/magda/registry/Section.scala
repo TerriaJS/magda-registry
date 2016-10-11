@@ -1,4 +1,6 @@
 package au.csiro.data61.magda.registry
 
-case class Section(var id: String, var name: String) {
+import spray.json.{JsObject, JsValue}
+
+case class Section(id: String, name: String, jsonSchema: JsObject) {
 }
