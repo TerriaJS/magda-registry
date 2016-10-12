@@ -12,6 +12,12 @@ import akka.http.scaladsl.server.ExceptionHandler
 import scala.util.{Success, Failure}
 
 class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols with BadRequestProtocols {
+  val route =
+    get { pathEnd { getAll } } ~
+    get { path(Segment) { getById } } ~
+    put { path(Segment) { putById } } ~
+    post { pathEnd { createNew } }
+
   private val getAll = complete {
       DB readOnly { session =>
         SectionPersistence.getAll(session)
@@ -46,12 +52,4 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
       }
     }
   }
-  
-  val route =
-    get { pathEnd { getAll } } ~
-    get { path(Segment) { getById } } ~
-    put { path(Segment) { putById } } ~
-    post { pathEnd { createNew } }
-
-  private def rowToSection(rs: WrappedResultSet): Section = new Section(rs.string("sectionID"), rs.string("name"), JsonParser(rs.string("jsonSchema")).asJsObject)
 }
