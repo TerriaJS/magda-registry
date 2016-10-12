@@ -7,52 +7,51 @@ import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
 import spray.json._
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.server.ExceptionHandler
+
+import scala.util.{Success, Failure}
 
 class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols with BadRequestProtocols {
-  val route = get {
-    pathEnd {
-      complete {
-        DB readOnly { implicit session =>
-          sql"select sectionID, name, jsonSchema from Section".map(rs => rowToSection(rs)).list.apply()
-        }
+  val getAll = complete {
+      DB readOnly { session =>
+        SectionPersistence.getAll(session)
       }
-    } ~
-    path(Segment) { id =>
-      complete {
-        DB readOnly { implicit session =>
-          sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rs => rowToSection(rs)).single.apply().get
-        }
+  }
+  
+  val getById = (id: String) => {
+    DB readOnly { session =>
+      SectionPersistence.getById(session, id) match {
+        case Some(section) => complete(section)
+        case None => complete(StatusCodes.NotFound, BadRequest("No section exists with that ID."))
       }
     }
-  } ~
-  put {
-    path(Segment) { id =>
-      entity(as[Section]) { section =>
-        if (id != section.id) {
-          complete(StatusCodes.BadRequest, BadRequest("The section's id property does not match the URL."))
-        } else {
-          complete {
-            DB localTx { implicit session =>
-              sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${section.jsonSchema.compactPrint}::json)".update.apply()
-              section
-            }
-          }
-        }
-      }
-    }
-  } ~
-  post {
-    pathEnd {
-      entity(as[Section]) { section =>
-        complete {
-          DB localTx { implicit session =>
-            sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${section.jsonSchema.compactPrint}::json)".update.apply()
-            section
-          }
+  }
+  
+  val putById = (id: String) => {
+    entity(as[Section]) { section =>
+      DB localTx { implicit session => 
+        SectionPersistence.putById(session, id, section) match {
+          case Success(section) => complete(section)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
         }
       }
     }
   }
+  
+  val createNew = entity(as[Section]) { section =>
+    DB localTx { implicit session =>
+      SectionPersistence.create(session, section) match {
+        case Success(section) => complete(section)
+        case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
+      }
+    }
+  }
+  
+  val route =
+    get { pathEnd { getAll } } ~
+    get { path(Segment) { getById } } ~
+    put { path(Segment) { putById } } ~
+    post { pathEnd { createNew } }
 
   private def rowToSection(rs: WrappedResultSet): Section = new Section(rs.string("sectionID"), rs.string("name"), JsonParser(rs.string("jsonSchema")).asJsObject)
 }
