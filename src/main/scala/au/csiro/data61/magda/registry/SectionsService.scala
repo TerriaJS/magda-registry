@@ -12,13 +12,13 @@ import akka.http.scaladsl.server.ExceptionHandler
 import scala.util.{Success, Failure}
 
 class SectionsService(system: ActorSystem, materializer: Materializer) extends SectionProtocols with BadRequestProtocols {
-  val getAll = complete {
+  private val getAll = complete {
       DB readOnly { session =>
         SectionPersistence.getAll(session)
       }
   }
   
-  val getById = (id: String) => {
+  private val getById = (id: String) => {
     DB readOnly { session =>
       SectionPersistence.getById(session, id) match {
         case Some(section) => complete(section)
@@ -27,7 +27,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
     }
   }
   
-  val putById = (id: String) => {
+  private val putById = (id: String) => {
     entity(as[Section]) { section =>
       DB localTx { implicit session => 
         SectionPersistence.putById(session, id, section) match {
@@ -38,7 +38,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
     }
   }
   
-  val createNew = entity(as[Section]) { section =>
+  private val createNew = entity(as[Section]) { section =>
     DB localTx { implicit session =>
       SectionPersistence.create(session, section) match {
         case Success(section) => complete(section)
