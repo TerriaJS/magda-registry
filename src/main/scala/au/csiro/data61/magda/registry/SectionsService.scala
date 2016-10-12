@@ -35,7 +35,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
   
   private val putById = (id: String) => {
     entity(as[Section]) { section =>
-      DB localTx { implicit session => 
+      DB localTx { session => 
         SectionPersistence.putById(session, id, section) match {
           case Success(section) => complete(section)
           case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
@@ -45,7 +45,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends S
   }
   
   private val createNew = entity(as[Section]) { section =>
-    DB localTx { implicit session =>
+    DB localTx { session =>
       SectionPersistence.create(session, section) match {
         case Success(section) => complete(section)
         case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
