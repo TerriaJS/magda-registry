@@ -66,7 +66,7 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
     handleExceptions(myExceptionHandler) {
       path("ping")(complete("OK")) ~
       pathPrefix("sections")(new SectionsService(system, materializer).route) ~
-      pathPrefix("datasets")(new DatasetsService(system, materializer).route)
+      pathPrefix("records")(new RecordsService(system, materializer).route)
     }
   }
 
