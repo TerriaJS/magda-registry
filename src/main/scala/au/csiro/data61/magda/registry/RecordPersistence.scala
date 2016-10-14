@@ -27,7 +27,22 @@ object RecordPersistence {
       
     result
   }
-  
+
+  def getAllWithSections(implicit session: DBSession, sectionIDs: Iterable[String]): Iterable[Record] = {
+    val result = 
+      sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName, data
+            from Record
+            left outer join RecordSection using (recordID)
+            left outer join Section using (sectionID)
+            where sectionID in ${sectionIDs}"""
+      .map(rs => (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName")))
+      .list.apply()
+      .groupBy(t => (t._1, t._2)) // group by recordID and recordName
+      .map { case (key, value) => Record(id = key._1, name = key._2, sections = value.filter(_._3 != null).map(t => RecordSection(id = t._3, name = t._4, data = None))) }
+      
+    result
+  }
+
 //  def getById(implicit session: DBSession, id: String): Option[Record] = {
 //    sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rs => rowToSection(rs)).single.apply()
 //  }
