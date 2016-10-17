@@ -49,12 +49,11 @@ object RecordPersistence {
   def putRecordById(implicit session: DBSession, id: String, record: Record): Try[Record] = {
     if (id != record.id) {
       // TODO: we can do better than RuntimeException here.
-      // TODO: Really, this is a silly API and this method shouldn't take an id at all.
       return Failure(new RuntimeException("The provided ID does not match the record's id."))
     }
 
     // Update the record
-    sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})
+    sql"""insert into Record (recordID, name) values ($id, ${record.name})
           on conflict (recordID) do update
           set name=${record.name}""".update.apply()
 
@@ -65,7 +64,7 @@ object RecordPersistence {
         case None => null
       }
       sql"""insert into RecordSection (recordID, sectionID, data)
-            values (${record.id}, ${section.id}, $jsonData::json)
+            values ($id, ${section.id}, $jsonData::json)
             on conflict (recordID, sectionID) do update
             set data=$jsonData::json""".update.apply()
     }
@@ -100,7 +99,6 @@ object RecordPersistence {
   def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
     if (sectionID != section.id) {
       // TODO: we can do better than RuntimeException here.
-      // TODO: Really, this is a silly API and this method shouldn't take an id at all.
       return Failure(new RuntimeException("The provided ID does not match the section's id."))
     }
 
