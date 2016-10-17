@@ -8,7 +8,6 @@ import java.sql.SQLException
 import spray.json.JsObject
 import com.networknt.schema.ValidationMessage
 import collection.JavaConverters._
-import com.networknt.schema.JsonSchema
 import com.networknt.schema.JsonSchemaFactory
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
@@ -19,7 +18,7 @@ object SectionPersistence {
   }
   
   def getById(implicit session: DBSession, id: String): Option[Section] = {
-    sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rowToSection).single.apply()
+    sql"""select sectionID, name, jsonSchema from Section where sectionID=$id""".map(rowToSection).single.apply()
   }
   
   def putById(implicit session: DBSession, id: String, section: Section): Try[Section] = {
@@ -29,12 +28,12 @@ object SectionPersistence {
     }
     
     // Make sure we have a valid JSON Schema
-    if (!section.jsonSchema.isEmpty) {
-      val schemaValidationResult = validateJsonSchema(section.jsonSchema.get);
-      if (schemaValidationResult.size > 0) {
-        var lines = "The provided JSON Schema is not valid:" ::  
+    if (section.jsonSchema.isDefined) {
+      val schemaValidationResult = validateJsonSchema(section.jsonSchema.get)
+      if (schemaValidationResult.nonEmpty) {
+        val lines = "The provided JSON Schema is not valid:" ::
                     schemaValidationResult.map(_.getMessage())
-        var message = lines.mkString("\n")
+        val message = lines.mkString("\n")
         return Failure(new RuntimeException(message))
       }
     }
@@ -46,9 +45,9 @@ object SectionPersistence {
       case Some(jsonSchema) => jsonSchema.compactPrint
       case None => null
     }
-    sql"""insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${jsonString}::json)
+    sql"""insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, $jsonString::json)
           on conflict (sectionID) do update
-          set name = ${section.name}, jsonSchema = ${jsonString}::json
+          set name = ${section.name}, jsonSchema = $jsonString::json
           """.update.apply()
     Success(section)
   }
@@ -59,7 +58,7 @@ object SectionPersistence {
         case Some(jsonSchema) => jsonSchema.compactPrint
         case None => null
       }
-      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${jsonString}::json)".update.apply()
+      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, $jsonString::json)".update.apply()
       Success(section)
     } catch {
       case e: SQLException => Failure(new RuntimeException("A section with the specified ID already exists."))
@@ -67,11 +66,11 @@ object SectionPersistence {
   }
   
   private def rowToSection(rs: WrappedResultSet): Section = {
-    var jsonSchema: Option[JsObject] = if (rs.string("jsonSchema") == null) None else Some(JsonParser(rs.string("jsonSchema")).asJsObject)
-    new Section(
-        rs.string("sectionID"),
-        rs.string("name"),
-        jsonSchema)
+    val jsonSchema: Option[JsObject] = if (rs.string("jsonSchema") == null) None else Some(JsonParser(rs.string("jsonSchema")).asJsObject)
+    Section(
+      rs.string("sectionID"),
+      rs.string("name"),
+      jsonSchema)
   }
   
   private def validateJsonSchema(jsonSchema: JsObject): List[ValidationMessage] = {

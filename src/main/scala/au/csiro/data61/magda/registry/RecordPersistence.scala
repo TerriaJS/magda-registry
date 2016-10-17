@@ -5,13 +5,6 @@ import spray.json.JsonParser
 import scala.util.Try
 import scala.util.{Success, Failure}
 import java.sql.SQLException
-import spray.json.JsObject
-import com.networknt.schema.ValidationMessage
-import collection.JavaConverters._
-import com.networknt.schema.JsonSchema
-import com.networknt.schema.JsonSchemaFactory
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.JsonNode
 
 object RecordPersistence {
   def getAll(implicit session: DBSession): Iterable[Record] = {
@@ -29,7 +22,7 @@ object RecordPersistence {
                           from Record
                           left outer join RecordSection using (recordID)
                           left outer join Section using (sectionID)
-                          where sectionID in (${sectionIDs})"""
+                          where sectionID in ($sectionIDs)"""
       .map(recordRowWithDataToTuple)
       .list.apply())
   }
@@ -39,7 +32,7 @@ object RecordPersistence {
                           from Record
                           left outer join RecordSection using (recordID)
                           left outer join Section using (sectionID)
-                          where recordID=${id}"""
+                          where recordID=$id"""
       .map(recordRowWithDataToTuple)
       .list.apply()).headOption
   }
@@ -47,8 +40,8 @@ object RecordPersistence {
   def getRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String): Option[RecordSection] = {
     sql"""select RecordSection.sectionID as sectionID, name as sectionName, data from RecordSection
           inner join Section using (sectionID)
-          where RecordSection.recordID=${recordID}
-          and RecordSection.sectionID=${sectionID}"""
+          where RecordSection.recordID=$recordID
+          and RecordSection.sectionID=$sectionID"""
       .map(rowToSection)
       .single.apply()
   }
@@ -72,9 +65,9 @@ object RecordPersistence {
         case None => null
       }
       sql"""insert into RecordSection (recordID, sectionID, data)
-            values (${record.id}, ${section.id}, ${jsonData}::json)
+            values (${record.id}, ${section.id}, $jsonData::json)
             on conflict (recordID, sectionID) do update
-            set data=${jsonData}::json""".update.apply()
+            set data=$jsonData::json""".update.apply()
     }
 
     Success(record)
@@ -99,7 +92,7 @@ object RecordPersistence {
       case Some(json) => json.compactPrint
       case None => null
     }
-    sql"""insert into RecordSection (recordID, sectionID, data) values (${recordID}, ${section.id}, ${jsonData}::json)""".update.apply()
+    sql"""insert into RecordSection (recordID, sectionID, data) values ($recordID, ${section.id}, $jsonData::json)""".update.apply()
 
     Success(section)
   }
@@ -116,17 +109,16 @@ object RecordPersistence {
       case None => null
     }
     sql"""insert into RecordSection (recordID, sectionID, data)
-          values (${recordID}, ${section.id}, ${jsonData}::json)
+          values ($recordID, ${section.id}, $jsonData::json)
           on conflict (recordID, sectionID) do update
-          set data=${jsonData}::json""".update.apply()
+          set data=$jsonData::json""".update.apply()
 
     Success(section)
   }
 
   private def recordRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
   private def recordRowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
-  private def sectionRowToTuple(rs: WrappedResultSet) = (rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
-  
+
   private def tuplesToRecords(tuples: List[(String, String, String, String, Option[String])]): Iterable[Record] = {
     tuples.groupBy({ case (recordID, recordName, _, _, _) => (recordID, recordName) })
           .map {
