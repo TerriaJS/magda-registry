@@ -8,12 +8,15 @@ import scalikejdbc._
 import spray.json._
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.ExceptionHandler
+import scala.util.Failure
+import scala.util.Success
 
 class RecordsService(system: ActorSystem, materializer: Materializer) extends RecordProtocols with BadRequestProtocols {
   val route =
     get { pathEnd { parameters('section.*) { getAll } } } ~
     get { path(Segment) {getById } } ~
-    get { path(Segment / "sections" / Segment) { getRecordSectionById } } 
+    get { path(Segment / "sections" / Segment) { getRecordSectionById } } ~
+    post { pathEnd { createRecord } }
 
   private val getAll = (sections: Iterable[String]) => {
     complete {
@@ -40,6 +43,15 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Re
       RecordPersistence.getRecordSectionById(session, recordID, sectionID) match {
         case Some(recordSection) => complete(recordSection)
         case None => complete(StatusCodes.NotFound, BadRequest("No record section exists with that ID."))
+      }
+    }
+  }
+
+  private val createRecord = entity(as[Record]) { record =>
+    DB localTx { session =>
+      RecordPersistence.createRecord(session, record) match {
+        case Success(record) => complete(record)
+        case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
       }
     }
   }

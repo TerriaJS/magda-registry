@@ -53,18 +53,25 @@ object RecordPersistence {
       .single.apply()
   }
   
-//  def create(implicit session: DBSession, section: Record): Try[Record] = {
-//    try {
-//      val jsonString = section.jsonSchema match {
-//        case Some(jsonSchema) => jsonSchema.compactPrint
-//        case None => null
-//      }
-//      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${jsonString}::json)".update.apply()
-//      Success(section)
-//    } catch {
-//      case e: SQLException => Failure(new RuntimeException("A record with the specified ID already exists."))
-//    }
-//  }
+  def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
+    // First create the Record
+    try {
+      sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})""".update.apply()
+    } catch {
+      case e: SQLException => return Failure(new RuntimeException("A record with the specified ID already exists."))
+    }
+    
+    // Then create the sections
+    record.sections.foreach { section =>
+      val jsonData = section.data match {
+        case Some(json) => json.compactPrint
+        case None => null
+      }
+      sql"""insert into RecordSection (recordID, sectionID, data) values (${record.id}, ${section.id}, ${jsonData}::json)""".update.apply()
+    }
+    
+    Success(record)
+  }
 
   private def recordRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
   private def recordRowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
