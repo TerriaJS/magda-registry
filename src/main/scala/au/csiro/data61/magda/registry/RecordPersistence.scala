@@ -19,7 +19,7 @@ object RecordPersistence {
                           from Record
                           left outer join RecordSection using (recordID)
                           left outer join Section using (sectionID)"""
-      .map(rowToTuple)
+      .map(recordRowToTuple)
       .list.apply())
       
   }
@@ -30,14 +30,47 @@ object RecordPersistence {
                           left outer join RecordSection using (recordID)
                           left outer join Section using (sectionID)
                           where sectionID in (${sectionIDs})"""
-      .map(rowWithDataToTuple)
+      .map(recordRowWithDataToTuple)
       .list.apply())
   }
   
-  private def rowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
-  private def rowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
+  def getById(implicit session: DBSession, id: String): Option[Record] = {
+    tuplesToRecords(sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName, data
+                          from Record
+                          left outer join RecordSection using (recordID)
+                          left outer join Section using (sectionID)
+                          where recordID=${id}"""
+      .map(recordRowWithDataToTuple)
+      .list.apply()).headOption
+  }
   
-  private def tuplesToRecords(tuples: List[(String, String, String, String, Option[String])]) = {
+  def getRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String): Option[RecordSection] = {
+    sql"""select RecordSection.sectionID as sectionID, name as sectionName, data from RecordSection
+          inner join Section using (sectionID)
+          where RecordSection.recordID=${recordID}
+          and RecordSection.sectionID=${sectionID}"""
+      .map(rowToSection)
+      .single.apply()
+  }
+  
+//  def create(implicit session: DBSession, section: Record): Try[Record] = {
+//    try {
+//      val jsonString = section.jsonSchema match {
+//        case Some(jsonSchema) => jsonSchema.compactPrint
+//        case None => null
+//      }
+//      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${jsonString}::json)".update.apply()
+//      Success(section)
+//    } catch {
+//      case e: SQLException => Failure(new RuntimeException("A record with the specified ID already exists."))
+//    }
+//  }
+
+  private def recordRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
+  private def recordRowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
+  private def sectionRowToTuple(rs: WrappedResultSet) = (rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
+  
+  private def tuplesToRecords(tuples: List[(String, String, String, String, Option[String])]): Iterable[Record] = {
     tuples.groupBy({ case (recordID, recordName, _, _, _) => (recordID, recordName) })
           .map {
             case ((recordID, recordName), value) =>
@@ -52,6 +85,13 @@ object RecordPersistence {
                                     data = data.map(JsonParser(_).asJsObject))
                                 }))
           }
+  }
+  
+  private def rowToSection(rs: WrappedResultSet): RecordSection = {
+    RecordSection(
+        id = rs.string("sectionID"),
+        name = rs.string("sectionName"),
+        data = rs.stringOpt("data").map(JsonParser(_).asJsObject))
   }
 
 //  def getById(implicit session: DBSession, id: String): Option[Record] = {

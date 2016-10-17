@@ -11,7 +11,9 @@ import akka.http.scaladsl.server.ExceptionHandler
 
 class RecordsService(system: ActorSystem, materializer: Materializer) extends RecordProtocols with BadRequestProtocols {
   val route =
-    get { pathEnd { parameters('section.*) { getAll } } }
+    get { pathEnd { parameters('section.*) { getAll } } } ~
+    get { path(Segment) {getById } } ~
+    get { path(Segment / "sections" / Segment) { getRecordSectionById } } 
 
   private val getAll = (sections: Iterable[String]) => {
     complete {
@@ -20,6 +22,24 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Re
           RecordPersistence.getAll(session)
         else
           RecordPersistence.getAllWithSections(session, sections)
+      }
+    }
+  }
+  
+  private val getById = (id: String) => {
+    DB readOnly { session =>
+      RecordPersistence.getById(session, id) match {
+        case Some(section) => complete(section)
+        case None => complete(StatusCodes.NotFound, BadRequest("No record exists with that ID."))
+      }
+    }
+  }
+
+  private val getRecordSectionById = (recordID: String, sectionID: String) => {
+    DB readOnly { session =>
+      RecordPersistence.getRecordSectionById(session, recordID, sectionID) match {
+        case Some(recordSection) => complete(recordSection)
+        case None => complete(StatusCodes.NotFound, BadRequest("No record section exists with that ID."))
       }
     }
   }

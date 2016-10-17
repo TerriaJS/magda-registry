@@ -15,11 +15,11 @@ import com.fasterxml.jackson.databind.JsonNode
 
 object SectionPersistence {
   def getAll(implicit session: DBSession): List[Section] = {
-    sql"select sectionID, name, jsonSchema from Section".map(rs => rowToSection(rs)).list.apply()
+    sql"select sectionID, name, jsonSchema from Section".map(rowToSection).list.apply()
   }
   
   def getById(implicit session: DBSession, id: String): Option[Section] = {
-    sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rs => rowToSection(rs)).single.apply()
+    sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rowToSection).single.apply()
   }
   
   def putById(implicit session: DBSession, id: String, section: Section): Try[Section] = {
