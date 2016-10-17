@@ -23,7 +23,7 @@ libraryDependencies ++= {
     "ch.qos.logback"  %  "logback-classic" % "1.1.7",
     "org.postgresql"  %  "postgresql" % "9.4.1211.jre7",
     "org.scalatest" %% "scalatest" % scalaTestV % "test",
-    "com.github.swagger-akka-http" %% "swagger-akka-http" % "0.6.2"
+    "com.github.swagger-akka-http" %% "swagger-akka-http" % "0.7.2"
   )
 }
 
