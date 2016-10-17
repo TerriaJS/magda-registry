@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS Section (
 CREATE TABLE IF NOT EXISTS RecordSection (
     recordID varchar(100) REFERENCES Record NOT NULL,
     sectionID varchar(100) REFERENCES Section NOT NULL,
-    data jsonb NOT NULL
+    data jsonb NOT NULL,
+    PRIMARY KEY (recordID, sectionID)
 );
 
 CREATE TABLE IF NOT EXISTS RecordHierarchy (

@@ -53,6 +53,33 @@ object RecordPersistence {
       .single.apply()
   }
   
+  def putRecordById(implicit session: DBSession, id: String, record: Record): Try[Record] = {
+    if (id != record.id) {
+      // TODO: we can do better than RuntimeException here.
+      // TODO: Really, this is a silly API and this method shouldn't take an id at all.
+      return Failure(new RuntimeException("The provided ID does not match the record's id."))
+    }
+
+    // Update the record
+    sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})
+          on conflict (recordID) do update
+          set name=${record.name}""".update.apply()
+
+    // Update the sections
+    record.sections.foreach { section =>
+      val jsonData = section.data match {
+        case Some(json) => json.compactPrint
+        case None => null
+      }
+      sql"""insert into RecordSection (recordID, sectionID, data)
+            values (${record.id}, ${section.id}, ${jsonData}::json)
+            on conflict (recordID, sectionID) do update
+            set data=${jsonData}::json""".update.apply()
+    }
+
+    Success(record)
+  }
+  
   def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
     // First create the Record
     try {
@@ -62,15 +89,38 @@ object RecordPersistence {
     }
     
     // Then create the sections
-    record.sections.foreach { section =>
-      val jsonData = section.data match {
-        case Some(json) => json.compactPrint
-        case None => null
-      }
-      sql"""insert into RecordSection (recordID, sectionID, data) values (${record.id}, ${section.id}, ${jsonData}::json)""".update.apply()
-    }
+    record.sections.foreach(createRecordSection(session, record.id, _))
     
     Success(record)
+  }
+
+  def createRecordSection(implicit session: DBSession, recordID: String, section: RecordSection): Try[RecordSection] = {
+    val jsonData = section.data match {
+      case Some(json) => json.compactPrint
+      case None => null
+    }
+    sql"""insert into RecordSection (recordID, sectionID, data) values (${recordID}, ${section.id}, ${jsonData}::json)""".update.apply()
+
+    Success(section)
+  }
+
+  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
+    if (sectionID != section.id) {
+      // TODO: we can do better than RuntimeException here.
+      // TODO: Really, this is a silly API and this method shouldn't take an id at all.
+      return Failure(new RuntimeException("The provided ID does not match the section's id."))
+    }
+
+    val jsonData = section.data match {
+      case Some(json) => json.compactPrint
+      case None => null
+    }
+    sql"""insert into RecordSection (recordID, sectionID, data)
+          values (${recordID}, ${section.id}, ${jsonData}::json)
+          on conflict (recordID, sectionID) do update
+          set data=${jsonData}::json""".update.apply()
+
+    Success(section)
   }
 
   private def recordRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
@@ -100,61 +150,4 @@ object RecordPersistence {
         name = rs.string("sectionName"),
         data = rs.stringOpt("data").map(JsonParser(_).asJsObject))
   }
-
-//  def getById(implicit session: DBSession, id: String): Option[Record] = {
-//    sql"select sectionID, name, jsonSchema from Section where sectionID=${id}".map(rs => rowToSection(rs)).single.apply()
-//  }
-//  
-//  def putById(implicit session: DBSession, id: String, section: Section): Try[Section] = {
-//    if (id != section.id) {
-//      // TODO: we can do better than RuntimeException here.
-//      return Failure(new RuntimeException("The provided ID does not match the section's id."))
-//    }
-//    
-//    // Make sure we have a valid JSON Schema
-//    val schemaValidationResult = validateJsonSchema(section.jsonSchema);
-//    if (schemaValidationResult.size > 0) {
-//      var lines = "The provided JSON Schema is not valid:" ::  
-//                  schemaValidationResult.map(_.getMessage())
-//      var message = lines.mkString("\n")
-//      
-//      // TODO: include details of the validation failure.
-//      return Failure(new RuntimeException(message))
-//    }
-//    
-//    // Make sure existing data for this section matches the new JSON Schema
-//    // TODO
-//
-//    val jsonString = section.jsonSchema.compactPrint
-//    sql"""insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${jsonString}::json)
-//          on conflict (sectionID) do update
-//          set name = ${section.name}, jsonSchema = ${jsonString}::json
-//          """.update.apply()
-//    Success(section)
-//  }
-//  
-//  def create(implicit session: DBSession, section: Section): Try[Section] = {
-//    try {
-//      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, ${section.jsonSchema.compactPrint}::json)".update.apply()
-//      Success(section)
-//    } catch {
-//      case e: SQLException => Failure(new RuntimeException("A section with the specified ID already exists."))
-//    }
-//  }
-  
-  private def rowToRecordSummary(rs: WrappedResultSet): Section = {
-    ???    
-//    new Record(
-//      rs.string("recordID"), rs.string("recordName"), JsonParser(rs.string("jsonSchema")).asJsObject)
-  }
-  
-//  private def validateJsonSchema(jsonSchema: JsObject): List[ValidationMessage] = {
-//    // TODO: it's super inefficient format the JSON as a string only to parse it back using a different library.
-//    //       it'd be nice if we had a spray-json based JSON schema validator.
-//    val jsonString = jsonSchema.compactPrint
-//    val jsonNode = new ObjectMapper().readValue(jsonString, classOf[JsonNode])
-//    jsonSchemaSchema.validate(jsonNode).asScala.toList
-//  }
-//  
-//  private val jsonSchemaSchema = new JsonSchemaFactory().getSchema(getClass.getResourceAsStream("/json-schema.json"))
 }

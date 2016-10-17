@@ -15,8 +15,11 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Re
   val route =
     get { pathEnd { parameters('section.*) { getAll } } } ~
     get { path(Segment) {getById } } ~
+    put { path(Segment) { putRecordById } } ~
+    post { pathEnd { createRecord } } ~
     get { path(Segment / "sections" / Segment) { getRecordSectionById } } ~
-    post { pathEnd { createRecord } }
+    put { path(Segment / "sections" / Segment) { putRecordSectionById } } ~
+    post { path(Segment / "sections") { createRecordSection } }
 
   private val getAll = (sections: Iterable[String]) => {
     complete {
@@ -47,11 +50,44 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Re
     }
   }
 
+  private val putRecordById = (id: String) => {
+    entity(as[Record]) { record =>
+      DB localTx { session => 
+        RecordPersistence.putRecordById(session, id, record) match {
+          case Success(section) => complete(record)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
+        }
+      }
+    }
+  }
+
   private val createRecord = entity(as[Record]) { record =>
     DB localTx { session =>
       RecordPersistence.createRecord(session, record) match {
         case Success(record) => complete(record)
         case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
+      }
+    }
+  }
+
+  private val createRecordSection = (recordID: String) => {
+    entity(as[RecordSection]) { section =>
+      DB localTx { session =>
+        RecordPersistence.createRecordSection(session, recordID, section) match {
+          case Success(section) => complete(section)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
+        }
+      }
+    }
+  }
+
+  private val putRecordSectionById = (recordID: String, sectionID: String) => {
+    entity(as[RecordSection]) { section =>
+      DB localTx { session =>
+        RecordPersistence.putRecordSectionById(session, recordID, sectionID, section) match {
+          case Success(section) => complete(section)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage()))
+        }
       }
     }
   }
