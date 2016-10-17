@@ -7,12 +7,11 @@ import scala.util.{Success, Failure}
 import java.sql.SQLException
 
 object RecordPersistence {
-  def getAll(implicit session: DBSession): Iterable[Record] = {
-    tuplesToRecords(sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName
-                          from Record
-                          left outer join RecordSection using (recordID)
-                          left outer join Section using (sectionID)"""
-      .map(recordRowToTuple)
+  def getAll(implicit session: DBSession): Iterable[RecordSummary] = {
+    tuplesToSummaryRecords(sql"""select recordID, Record.name as recordName, sectionID
+                                 from Record
+                                 left outer join RecordSection using (recordID)"""
+      .map(recordSummaryRowToTuple)
       .list.apply())
       
   }
@@ -58,20 +57,29 @@ object RecordPersistence {
           set name=${record.name}""".update.apply()
 
     // Update the sections
-    record.sections.foreach { section =>
-      val jsonData = section.data match {
-        case Some(json) => json.compactPrint
-        case None => null
-      }
-      sql"""insert into RecordSection (recordID, sectionID, data)
-            values ($id, ${section.id}, $jsonData::json)
-            on conflict (recordID, sectionID) do update
-            set data=$jsonData::json""".update.apply()
-    }
+    record.sections.foreach(section => putRecordSectionById(session, id, section.id, section))
 
     Success(record)
   }
-  
+
+  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
+    if (sectionID != section.id) {
+      // TODO: we can do better than RuntimeException here.
+      return Failure(new RuntimeException("The provided ID does not match the section's id."))
+    }
+
+    val jsonData = section.data match {
+      case Some(json) => json.compactPrint
+      case None => null
+    }
+    sql"""insert into RecordSection (recordID, sectionID, data)
+          values ($recordID, ${section.id}, $jsonData::json)
+          on conflict (recordID, sectionID) do update
+          set data=$jsonData::json""".update.apply()
+
+    Success(section)
+  }
+
   def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
     // First create the Record
     try {
@@ -96,26 +104,20 @@ object RecordPersistence {
     Success(section)
   }
 
-  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
-    if (sectionID != section.id) {
-      // TODO: we can do better than RuntimeException here.
-      return Failure(new RuntimeException("The provided ID does not match the section's id."))
-    }
-
-    val jsonData = section.data match {
-      case Some(json) => json.compactPrint
-      case None => null
-    }
-    sql"""insert into RecordSection (recordID, sectionID, data)
-          values ($recordID, ${section.id}, $jsonData::json)
-          on conflict (recordID, sectionID) do update
-          set data=$jsonData::json""".update.apply()
-
-    Success(section)
-  }
-
-  private def recordRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
+  private def recordSummaryRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"))
   private def recordRowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
+
+  private def tuplesToSummaryRecords(tuples: List[(String, String, String)]): Iterable[RecordSummary] = {
+    tuples.groupBy({ case (recordID, recordName, _) => (recordID, recordName) })
+      .map {
+        case ((recordID, recordName), value) =>
+          RecordSummary(
+            id = recordID,
+            name = recordName,
+            sections = value.filter({ case (_, _, sectionID) => sectionID != null })
+              .map({ case (_, _, sectionID) => sectionID }))
+      }
+  }
 
   private def tuplesToRecords(tuples: List[(String, String, String, String, Option[String])]): Iterable[Record] = {
     tuples.groupBy({ case (recordID, recordName, _, _, _) => (recordID, recordName) })
