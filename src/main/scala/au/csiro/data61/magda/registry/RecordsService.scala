@@ -11,19 +11,15 @@ import akka.http.scaladsl.server.ExceptionHandler
 
 class RecordsService(system: ActorSystem, materializer: Materializer) extends RecordProtocols with BadRequestProtocols {
   val route =
-    get { pathEnd { getAll } } ~
-    get { pathEnd { parameters('section.*) { getAllWithSections } } }
+    get { pathEnd { parameters('section.*) { getAll } } }
 
-  private val getAll = complete {
-      DB readOnly { session =>
-        RecordPersistence.getAll(session)
-      }
-  }
-  
-  private val getAllWithSections = (sections: Iterable[String]) => {
+  private val getAll = (sections: Iterable[String]) => {
     complete {
       DB readOnly { session =>
-        RecordPersistence.getAllWithSections(session, sections)
+        if (sections.isEmpty)
+          RecordPersistence.getAll(session)
+        else
+          RecordPersistence.getAllWithSections(session, sections)
       }
     }
   }

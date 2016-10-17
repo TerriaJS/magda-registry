@@ -15,32 +15,43 @@ import com.fasterxml.jackson.databind.JsonNode
 
 object RecordPersistence {
   def getAll(implicit session: DBSession): Iterable[Record] = {
-    val result = 
-      sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName
-            from Record
-            left outer join RecordSection using (recordID)
-            left outer join Section using (sectionID)"""
-      .map(rs => (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName")))
-      .list.apply()
-      .groupBy(t => (t._1, t._2)) // group by recordID and recordName
-      .map { case (key, value) => Record(id = key._1, name = key._2, sections = value.filter(_._3 != null).map(t => RecordSection(id = t._3, name = t._4, data = None))) }
+    tuplesToRecords(sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName
+                          from Record
+                          left outer join RecordSection using (recordID)
+                          left outer join Section using (sectionID)"""
+      .map(rowToTuple)
+      .list.apply())
       
-    result
   }
 
   def getAllWithSections(implicit session: DBSession, sectionIDs: Iterable[String]): Iterable[Record] = {
-    val result = 
-      sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName, data
-            from Record
-            left outer join RecordSection using (recordID)
-            left outer join Section using (sectionID)
-            where sectionID in ${sectionIDs}"""
-      .map(rs => (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName")))
-      .list.apply()
-      .groupBy(t => (t._1, t._2)) // group by recordID and recordName
-      .map { case (key, value) => Record(id = key._1, name = key._2, sections = value.filter(_._3 != null).map(t => RecordSection(id = t._3, name = t._4, data = None))) }
-      
-    result
+    tuplesToRecords(sql"""select recordID, Record.name as recordName, sectionID, Section.name as sectionName, data
+                          from Record
+                          left outer join RecordSection using (recordID)
+                          left outer join Section using (sectionID)
+                          where sectionID in (${sectionIDs})"""
+      .map(rowWithDataToTuple)
+      .list.apply())
+  }
+  
+  private def rowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), None)
+  private def rowWithDataToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"), rs.string("sectionName"), rs.stringOpt("data"))
+  
+  private def tuplesToRecords(tuples: List[(String, String, String, String, Option[String])]) = {
+    tuples.groupBy({ case (recordID, recordName, _, _, _) => (recordID, recordName) })
+          .map {
+            case ((recordID, recordName), value) =>
+              Record(
+                id = recordID,
+                name = recordName,
+                sections = value.filter({ case (_, _, sectionID, _, _) => sectionID != null })
+                                .map({ case (_, _, sectionID, sectionName, data) =>
+                                  RecordSection(
+                                    id = sectionID,
+                                    name = sectionName,
+                                    data = data.map(JsonParser(_).asJsObject))
+                                }))
+          }
   }
 
 //  def getById(implicit session: DBSession, id: String): Option[Record] = {
