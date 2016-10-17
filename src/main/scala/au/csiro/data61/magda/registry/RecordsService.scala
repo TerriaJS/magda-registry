@@ -9,7 +9,7 @@ import akka.http.scaladsl.model.StatusCodes
 import scala.util.Failure
 import scala.util.Success
 
-class RecordsService(system: ActorSystem, materializer: Materializer) extends RecordProtocols with BadRequestProtocols {
+class RecordsService(system: ActorSystem, materializer: Materializer) extends Protocols {
   val route =
     get { pathEnd { parameters('section.*) { getAll } } } ~
     get { path(Segment) {getById } } ~
