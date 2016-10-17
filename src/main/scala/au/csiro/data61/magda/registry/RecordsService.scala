@@ -11,6 +11,7 @@ import scala.util.Success
 
 class RecordsService(system: ActorSystem, materializer: Materializer) extends Protocols {
   val route =
+    get { pathEnd { parameter('sections) { sections => getAll(sections.split(",")) } } } ~
     get { pathEnd { parameters('section.*) { getAll } } } ~
     get { path(Segment) {getById } } ~
     put { path(Segment) { putRecordById } } ~

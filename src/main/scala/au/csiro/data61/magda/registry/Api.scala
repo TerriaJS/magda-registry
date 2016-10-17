@@ -65,6 +65,9 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
   val routes = cors() {
     handleExceptions(myExceptionHandler) {
       path("ping")(complete("OK")) ~
+      pathPrefix("swagger") {
+        getFromResourceDirectory("swagger") ~ pathSingleSlash(get(redirect("index.html", StatusCodes.PermanentRedirect)))
+      } ~
       pathPrefix("sections")(new SectionsService(system, materializer).route) ~
       pathPrefix("records")(new RecordsService(system, materializer).route)
     }
