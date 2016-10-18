@@ -8,7 +8,7 @@ import akka.stream.Materializer
 import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
 import akka.http.scaladsl.model.StatusCodes
-import io.swagger.annotations.{ApiImplicitParam, ApiImplicitParams, ApiOperation}
+import io.swagger.annotations._
 
 import scala.util.Failure
 import scala.util.Success
@@ -27,6 +27,9 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
   @ApiImplicitParams(Array(
     new ApiImplicitParam(name = "record", required = true, dataType = "au.csiro.data61.magda.registry.Record", paramType = "body", value = "The definition of the new record.")
   ))
+  @ApiResponses(Array(
+    new ApiResponse(code = 400, message = "A record already exists with the supplied ID, or the record includes a section that does not exist.", response = classOf[BadRequest])
+  ))
   def create = post { pathEnd { entity(as[Record]) { record =>
     DB localTx { session =>
       RecordPersistence.createRecord(session, record) match {
@@ -41,6 +44,9 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
     notes = "Gets a complete record, including data for all sections.")
   @ApiImplicitParams(Array(
     new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the record to be fetched.")
+  ))
+  @ApiResponses(Array(
+    new ApiResponse(code = 404, message = "No record exists with that ID.", response = classOf[BadRequest])
   ))
   def getById = get { path(Segment) { (id: String) => {
     DB readOnly { session =>
