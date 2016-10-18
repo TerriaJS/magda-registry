@@ -10,6 +10,7 @@ import scala.concurrent.duration.FiniteDuration
 import com.typesafe.config.Config
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
+import akka.actor.Props
 import akka.event.Logging
 import akka.event.LoggingAdapter
 import akka.http.scaladsl.Http

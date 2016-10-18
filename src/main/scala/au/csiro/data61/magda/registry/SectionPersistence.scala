@@ -6,11 +6,11 @@ import scala.util.Try
 import scala.util.{Success, Failure}
 import java.sql.SQLException
 import spray.json.JsObject
-import com.networknt.schema.ValidationMessage
-import collection.JavaConverters._
-import com.networknt.schema.JsonSchemaFactory
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.JsonNode
+//import com.networknt.schema.ValidationMessage
+//import collection.JavaConverters._
+//import com.networknt.schema.JsonSchemaFactory
+//import com.fasterxml.jackson.databind.ObjectMapper
+//import com.fasterxml.jackson.databind.JsonNode
 
 object SectionPersistence {
   def getAll(implicit session: DBSession): List[Section] = {
@@ -27,16 +27,16 @@ object SectionPersistence {
       return Failure(new RuntimeException("The provided ID does not match the section's id."))
     }
     
-    // Make sure we have a valid JSON Schema
-    if (section.jsonSchema.isDefined) {
-      val schemaValidationResult = validateJsonSchema(section.jsonSchema.get)
-      if (schemaValidationResult.nonEmpty) {
-        val lines = "The provided JSON Schema is not valid:" ::
-                    schemaValidationResult.map(_.getMessage())
-        val message = lines.mkString("\n")
-        return Failure(new RuntimeException(message))
-      }
-    }
+//    // Make sure we have a valid JSON Schema
+//    if (section.jsonSchema.isDefined) {
+//      val schemaValidationResult = validateJsonSchema(section.jsonSchema.get)
+//      if (schemaValidationResult.nonEmpty) {
+//        val lines = "The provided JSON Schema is not valid:" ::
+//                    schemaValidationResult.map(_.getMessage())
+//        val message = lines.mkString("\n")
+//        return Failure(new RuntimeException(message))
+//      }
+//    }
     
     // Make sure existing data for this section matches the new JSON Schema
     // TODO
@@ -73,13 +73,13 @@ object SectionPersistence {
       jsonSchema)
   }
   
-  private def validateJsonSchema(jsonSchema: JsObject): List[ValidationMessage] = {
-    // TODO: it's super inefficient format the JSON as a string only to parse it back using a different library.
-    //       it'd be nice if we had a spray-json based JSON schema validator.
-    val jsonString = jsonSchema.compactPrint
-    val jsonNode = new ObjectMapper().readValue(jsonString, classOf[JsonNode])
-    jsonSchemaSchema.validate(jsonNode).asScala.toList
-  }
+//  private def validateJsonSchema(jsonSchema: JsObject): List[ValidationMessage] = {
+//    // TODO: it's super inefficient format the JSON as a string only to parse it back using a different library.
+//    //       it'd be nice if we had a spray-json based JSON schema validator.
+//    val jsonString = jsonSchema.compactPrint
+//    val jsonNode = new ObjectMapper().readValue(jsonString, classOf[JsonNode])
+//    jsonSchemaSchema.validate(jsonNode).asScala.toList
+//  }
   
-  private val jsonSchemaSchema = new JsonSchemaFactory().getSchema(getClass.getResourceAsStream("/json-schema.json"))
+//  private val jsonSchemaSchema = new JsonSchemaFactory().getSchema(getClass.getResourceAsStream("/json-schema.json"))
 }

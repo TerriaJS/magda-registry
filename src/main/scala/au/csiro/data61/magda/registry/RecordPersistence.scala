@@ -82,16 +82,21 @@ object RecordPersistence {
 
   def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
     // First create the Record
-    try {
-      sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})""".update.apply()
+    val insertResult = try {
+      Success(sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})""".update.apply())
     } catch {
-      case e: SQLException => return Failure(new RuntimeException("A record with the specified ID already exists."))
+      case e: SQLException if e.getSQLState().substring(0, 2) == "23" =>
+        Failure(new RuntimeException(s"Cannot create record '${record.id}' because a record with that ID already exists."))
     }
-    
+
     // Then create the sections
-    record.sections.foreach(createRecordSection(session, record.id, _))
-    
-    Success(record)
+    insertResult.flatMap({ insertResult: Int =>
+      val sectionResults = record.sections.map(createRecordSection(session, record.id, _))
+      sectionResults.find(_.isFailure) match {
+        case Some(Failure(e)) => Failure(e)
+        case None => Success(record)
+      }
+    })
   }
 
   def createRecordSection(implicit session: DBSession, recordID: String, section: RecordSection): Try[RecordSection] = {
@@ -99,9 +104,14 @@ object RecordPersistence {
       case Some(json) => json.compactPrint
       case None => null
     }
-    sql"""insert into RecordSection (recordID, sectionID, data) values ($recordID, ${section.id}, $jsonData::json)""".update.apply()
 
-    Success(section)
+    try {
+      sql"""insert into RecordSection (recordID, sectionID, data) values ($recordID, ${section.id}, $jsonData::json)""".update.apply()
+      Success(section)
+    } catch {
+      case e: SQLException if e.getSQLState().substring(0, 2) == "23" =>
+        Failure(new RuntimeException(s"Cannot create section '${section.id}' for record '${recordID}' because the record or section does not exist, or because data already exists for that combination of record and section."))
+    }
   }
 
   private def recordSummaryRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"))
