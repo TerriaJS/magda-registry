@@ -13,7 +13,7 @@ import io.swagger.annotations._
 import scala.util.{Success, Failure}
 
 @Path("/sections")
-@io.swagger.annotations.Api(value = "/sections", produces = "application/json")
+@io.swagger.annotations.Api(value = "section definitions", produces = "application/json")
 class SectionsService(system: ActorSystem, materializer: Materializer) extends Protocols {
   @ApiOperation(value = "Get a list of all sections", nickname = "getAll", httpMethod = "GET", response = classOf[Section], responseContainer = "List")
   def getAll = get { pathEnd {

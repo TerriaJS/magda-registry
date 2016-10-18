@@ -14,7 +14,7 @@ import scala.util.Failure
 import scala.util.Success
 
 @Path("/records")
-@io.swagger.annotations.Api(value = "/records", produces = "application/json")
+@io.swagger.annotations.Api(value = "records", produces = "application/json")
 class RecordsService(system: ActorSystem, materializer: Materializer) extends Protocols {
   @ApiOperation(value = "Get a list of all records", nickname = "getAll", httpMethod = "GET", response = classOf[RecordSummary], responseContainer = "List")
   @ApiImplicitParams(Array(
@@ -59,7 +59,7 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
 
   @Path("/{id}")
   @ApiOperation(value = "Modify a record by ID", nickname = "putById", httpMethod = "PUT", response = classOf[Record],
-    notes = "Modifies a record.  Sections included in the request are updated, but missing sections are not removed.")
+    notes = "Modifies a record.  Sections included in the request are created or updated, but missing sections are not removed.")
   @ApiImplicitParams(Array(
     new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the record to be fetched."),
     new ApiImplicitParam(name = "record", required = true, dataType = "au.csiro.data61.magda.registry.Record", paramType = "body", value = "The record to save.")
@@ -81,9 +81,7 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
     getById ~
     putById ~
     create ~
-    get { path(Segment / "sections" / Segment) { getRecordSectionById } } ~
-    put { path(Segment / "sections" / Segment) { putRecordSectionById } } ~
-    post { path(Segment / "sections") { createRecordSection } }
+    new RecordSectionsService(system, materializer).route
 
   private def getAllWithSections(sections: Iterable[String]) = {
     complete {
@@ -92,37 +90,6 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
           RecordPersistence.getAll(session)
         else
           RecordPersistence.getAllWithSections(session, sections)
-      }
-    }
-  }
-
-  private def getRecordSectionById(recordID: String, sectionID: String) = {
-    DB readOnly { session =>
-      RecordPersistence.getRecordSectionById(session, recordID, sectionID) match {
-        case Some(recordSection) => complete(recordSection)
-        case None => complete(StatusCodes.NotFound, BadRequest("No record section exists with that ID."))
-      }
-    }
-  }
-
-  private def createRecordSection(recordID: String) = {
-    entity(as[RecordSection]) { section =>
-      DB localTx { session =>
-        RecordPersistence.createRecordSection(session, recordID, section) match {
-          case Success(result) => complete(result)
-          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage))
-        }
-      }
-    }
-  }
-
-  private def putRecordSectionById(recordID: String, sectionID: String) = {
-    entity(as[RecordSection]) { section =>
-      DB localTx { session =>
-        RecordPersistence.putRecordSectionById(session, recordID, sectionID, section) match {
-          case Success(result) => complete(result)
-          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage))
-        }
       }
     }
   }
