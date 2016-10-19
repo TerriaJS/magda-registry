@@ -65,13 +65,15 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
   implicit val timeout = Timeout(FiniteDuration(1, TimeUnit.SECONDS))
   val routes = cors() {
     handleExceptions(myExceptionHandler) {
-      path("ping")(complete("OK")) ~
-      pathPrefix("sections")(new SectionsService(system, materializer).route) ~
-      pathPrefix("records")(new RecordsService(system, materializer).route) ~
+      pathPrefix("api" / "0.1") {
+        path("ping") { complete("OK") } ~
+        pathPrefix("sections") { new SectionsService(system, materializer).route } ~
+        pathPrefix("records") { new RecordsService(system, materializer).route } ~
+        new SwaggerDocService("localhost", 9001, system).routes
+      } ~
       pathPrefix("swagger") {
         getFromResourceDirectory("swagger") ~ pathSingleSlash(get(redirect("index.html", StatusCodes.PermanentRedirect)))
-      } ~
-      new SwaggerDocService("localhost", 9001, system).routes
+      }
     }
   }
 
