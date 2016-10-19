@@ -16,6 +16,19 @@ import scala.util.Success
 @Path("/records/{recordID}/sections")
 @io.swagger.annotations.Api(value = "record sections", produces = "application/json")
 class RecordSectionsService(system: ActorSystem, materializer: Materializer) extends Protocols {
+  @ApiOperation(value = "Get a list of all sections of a record", nickname = "getAll", httpMethod = "GET", response = classOf[RecordSection], responseContainer = "List")
+  @ApiImplicitParams(Array(
+    new ApiImplicitParam(name = "recordID", required = true, dataType = "string", paramType = "path", value = "ID of the record for which to fetch sections.")
+  ))
+  def getAll = get { path(Segment / "sections") { (recordID: String) =>
+    DB readOnly { session =>
+      RecordPersistence.getById(session, recordID) match {
+        case Some(result) => complete(result.sections)
+        case None => complete(StatusCodes.NotFound, BadRequest("No record exists with that ID."))
+      }
+    }
+  } }
+
   @Path("/{sectionID}")
   @ApiOperation(value = "Get a record section by ID", nickname = "getById", httpMethod = "GET", response = classOf[RecordSection])
   @ApiImplicitParams(Array(
@@ -73,6 +86,7 @@ class RecordSectionsService(system: ActorSystem, materializer: Materializer) ext
   } } }
 
   val route =
+      getAll ~
       getById ~
       putById ~
       create
