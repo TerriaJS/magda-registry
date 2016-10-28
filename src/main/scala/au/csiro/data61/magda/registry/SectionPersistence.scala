@@ -2,13 +2,15 @@ package au.csiro.data61.magda.registry
 
 import scalikejdbc._
 import spray.json.JsonParser
+
 import scala.util.Try
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 import java.sql.SQLException
+
 import spray.json._
 import gnieh.diffson.sprayJson._
 
-object SectionPersistence extends Protocols {
+object SectionPersistence extends Protocols with DiffsonProtocol {
   def getAll(implicit session: DBSession): List[Section] = {
     sql"select sectionID, name, jsonSchema from Section".map(rowToSection).list.apply()
   }
@@ -17,67 +19,75 @@ object SectionPersistence extends Protocols {
     sql"""select sectionID, name, jsonSchema from Section where sectionID=$id""".map(rowToSection).single.apply()
   }
   
-  def putById(implicit session: DBSession, id: String, section: Section): Try[Section] = {
-    if (id != section.id) {
+  def putById(implicit session: DBSession, id: String, newSection: Section): Try[Section] = {
+    if (id != newSection.id) {
       // TODO: we can do better than RuntimeException here.
       return Failure(new RuntimeException("The provided ID does not match the section's id."))
     }
-    
-//    // Make sure we have a valid JSON Schema
-//    if (section.jsonSchema.isDefined) {
-//      val schemaValidationResult = validateJsonSchema(section.jsonSchema.get)
-//      if (schemaValidationResult.nonEmpty) {
-//        val lines = "The provided JSON Schema is not valid:" ::
-//                    schemaValidationResult.map(_.getMessage())
-//        val message = lines.mkString("\n")
-//        return Failure(new RuntimeException(message))
-//      }
-//    }
-    
-    // Make sure existing data for this section matches the new JSON Schema
-    // TODO
 
-    val jsonString = section.jsonSchema match {
+    // Read the existing section
+    val oldSection = this.getById(session, id)
+    if (oldSection.isEmpty) {
+      return Failure(new RuntimeException("No section exists with that ID."))
+    }
+
+    // Diff the old section and the new one
+    val oldSectionJson = oldSection.toJson
+    val newSectionJson = newSection.toJson
+
+    val diff = JsonDiff.diff(oldSectionJson, newSectionJson, false)
+    val event = PatchSectionDefinitionEvent(id, diff)
+    val eventString = event.toJson.compactPrint
+
+    // Create a 'Patch Section' event with the diff
+    sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $eventString::json)".update.apply()
+
+    // Patch the old section
+    val patchedSectionJson = diff(oldSectionJson)
+    val patchedSection = patchedSectionJson.convertTo[Section]
+
+    if (id != patchedSection.id) {
+      return Failure(new RuntimeException("The patch must not change the section's ID."))
+    }
+
+    // Write back the modified Section
+    val jsonString = patchedSection.jsonSchema match {
       case Some(jsonSchema) => jsonSchema.compactPrint
       case None => null
     }
-    sql"""insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, $jsonString::json)
-          on conflict (sectionID) do update
-          set name = ${section.name}, jsonSchema = $jsonString::json
-          """.update.apply()
-    Success(section)
+    sql"""insert into Section (sectionID, name, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $jsonString::json)
+      on conflict (sectionID) do update
+      set name = ${patchedSection.name}, jsonSchema = $jsonString::json
+      """.update.apply()
+    Success(patchedSection)
   }
 
-  def patchById(implicit session: DBSession, id: String, sectionPatchJson: String): Try[Section] = {
-    val sectionPatch = JsonPatch.parse(sectionPatchJson)
+  def patchById(implicit session: DBSession, id: String, sectionPatch: JsonPatch): Try[Section] = {
+    for {
+      section <- this.getById(session, id) match {
+        case Some(section) => Success(section)
+        case None => Failure(new RuntimeException("No section exists with that ID."))
+      }
+      patchedSection <- Try {
+        val event = PatchSectionDefinitionEvent(id, sectionPatch).toJson.compactPrint
+        sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $event::json)".update.apply()
 
-    // Create a 'Patch Section' event
-    sql"insert into Events (eventTypeID, userID, data) values (4, 0, $sectionPatchJson::json)".update.apply();
-
-    // Read the existing section
-    val section = this.getById(session, id)
-    if (section.isEmpty) {
-      Failure(new RuntimeException("No section exists with that ID."))
-    } else {
-      val sectionJson = section.get.toJson
-      val patchedJson = sectionPatch(sectionJson)
-      val patchedSection = patchedJson.convertTo[Section]
-
-      if (id != patchedSection.id) {
-        // TODO: we can do better than RuntimeException here.
-        Failure(new RuntimeException("The patch must not change the section's ID."))
-      } else {
+        val sectionJson = section.toJson
+        val patchedJson = sectionPatch(sectionJson)
+        patchedJson.convertTo[Section]
+      }
+      if (id == patchedSection.id)
+      _ <- Try {
         val jsonString = patchedSection.jsonSchema match {
           case Some(jsonSchema) => jsonSchema.compactPrint
           case None => null
         }
         sql"""insert into Section (sectionID, name, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $jsonString::json)
-          on conflict (sectionID) do update
-          set name = ${patchedSection.name}, jsonSchema = $jsonString::json
-          """.update.apply()
-        Success(patchedSection)
+             on conflict (sectionID) do update
+             set name = ${patchedSection.name}, jsonSchema = $jsonString::json
+             """.update.apply()
       }
-    }
+    } yield patchedSection
   }
 
   def create(implicit session: DBSession, section: Section): Try[Section] = {
@@ -105,14 +115,4 @@ object SectionPersistence extends Protocols {
       rs.string("name"),
       jsonSchema)
   }
-  
-//  private def validateJsonSchema(jsonSchema: JsObject): List[ValidationMessage] = {
-//    // TODO: it's super inefficient format the JSON as a string only to parse it back using a different library.
-//    //       it'd be nice if we had a spray-json based JSON schema validator.
-//    val jsonString = jsonSchema.compactPrint
-//    val jsonNode = new ObjectMapper().readValue(jsonString, classOf[JsonNode])
-//    jsonSchemaSchema.validate(jsonNode).asScala.toList
-//  }
-  
-//  private val jsonSchemaSchema = new JsonSchemaFactory().getSchema(getClass.getResourceAsStream("/json-schema.json"))
 }

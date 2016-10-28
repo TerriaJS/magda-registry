@@ -3,19 +3,20 @@ package au.csiro.data61.magda.registry
 import javax.ws.rs.Path
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.stream.Materializer
 import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
 import akka.http.scaladsl.model.StatusCodes
 import io.swagger.annotations._
-import spray.json.{JsArray, JsObject}
+import spray.json._
+import gnieh.diffson.sprayJson._
 
 import scala.util.{Failure, Success}
 
 @Path("/sections")
 @io.swagger.annotations.Api(value = "section definitions", produces = "application/json")
-class SectionsService(system: ActorSystem, materializer: Materializer) extends Protocols {
+class SectionsService(system: ActorSystem, materializer: Materializer) extends Protocols with SprayJsonSupport {
   @ApiOperation(value = "Get a list of all sections", nickname = "getAll", httpMethod = "GET", response = classOf[Section], responseContainer = "List")
   def getAll = get { pathEnd {
     complete {
@@ -75,10 +76,10 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends P
     notes = "The patch should follow IETF RFC 6902 (https://tools.ietf.org/html/rfc6902).")
   @ApiImplicitParams(Array(
     new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the section to be saved."),
-    new ApiImplicitParam(name = "sectionPatch", required = true, dataType = "Array", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
+    new ApiImplicitParam(name = "sectionPatch", required = true, dataType = "gnieh.diffson.JsonPatch", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
   ))
   def patchById = patch { path(Segment) { (id: String) => {
-    entity(as[String]) { sectionPatch =>
+    entity(as[JsonPatch]) { sectionPatch =>
       DB localTx { session =>
         SectionPersistence.patchById(session, id, sectionPatch) match {
           case Success(result) => complete(result)
