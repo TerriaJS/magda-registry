@@ -9,8 +9,9 @@ import akka.http.scaladsl.server.Directives._
 import scalikejdbc._
 import akka.http.scaladsl.model.StatusCodes
 import io.swagger.annotations._
+import spray.json.{JsArray, JsObject}
 
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 
 @Path("/sections")
 @io.swagger.annotations.Api(value = "section definitions", produces = "application/json")
@@ -69,9 +70,28 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends P
     }
   } } }
 
+  @Path("/{id}")
+  @ApiOperation(value = "Modify a section by applying a JSON Patch", nickname = "patchById", httpMethod = "PATCH", response = classOf[Section],
+    notes = "The patch should follow IETF RFC 6902 (https://tools.ietf.org/html/rfc6902).")
+  @ApiImplicitParams(Array(
+    new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the section to be saved."),
+    new ApiImplicitParam(name = "sectionPatch", required = true, dataType = "Array", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
+  ))
+  def patchById = patch { path(Segment) { (id: String) => {
+    entity(as[String]) { sectionPatch =>
+      DB localTx { session =>
+        SectionPersistence.patchById(session, id, sectionPatch) match {
+          case Success(result) => complete(result)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage))
+        }
+      }
+    }
+  } } }
+
   def route =
     getAll ~
     create ~
     getById ~
-    putById
+    putById ~
+    patchById
 }

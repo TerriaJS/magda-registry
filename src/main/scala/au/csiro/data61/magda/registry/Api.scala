@@ -31,6 +31,7 @@ import ch.megard.akka.http.cors.CorsDirectives
 import ch.megard.akka.http.cors.CorsSettings
 import scalikejdbc.config._
 import spray.json._
+import scalikejdbc._
 
 class Api(implicit val config: Config, implicit val system: ActorSystem, implicit val ec: ExecutionContext, implicit val materializer: Materializer) extends CorsDirectives {
   val logger = Logging(system, getClass)
@@ -59,6 +60,12 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
       }
     }
   }
+
+  GlobalSettings.loggingSQLAndTime = new LoggingSQLAndTimeSettings(
+    enabled = true,
+    singleLineMode = true,
+    logLevel = 'DEBUG
+  )
 
   DBs.setupAll()
 

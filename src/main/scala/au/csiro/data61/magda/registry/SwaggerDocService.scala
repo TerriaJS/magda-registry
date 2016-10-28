@@ -11,7 +11,7 @@ class SwaggerDocService(address: String, port: Int, system: ActorSystem) extends
   override implicit val actorSystem: ActorSystem = system
   override implicit val materializer: ActorMaterializer = ActorMaterializer()
   override val apiTypes = Seq(ru.typeOf[SectionsService], ru.typeOf[RecordsService], ru.typeOf[RecordSectionsService])
-  override val host = address + ":" + port
+  override val host = ""
   override val info = Info(version = "0.1")
   override val basePath = "/api/0.1/"
 }

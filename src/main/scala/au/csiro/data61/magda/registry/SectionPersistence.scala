@@ -5,14 +5,10 @@ import spray.json.JsonParser
 import scala.util.Try
 import scala.util.{Success, Failure}
 import java.sql.SQLException
-import spray.json.JsObject
-//import com.networknt.schema.ValidationMessage
-//import collection.JavaConverters._
-//import com.networknt.schema.JsonSchemaFactory
-//import com.fasterxml.jackson.databind.ObjectMapper
-//import com.fasterxml.jackson.databind.JsonNode
+import spray.json._
+import gnieh.diffson.sprayJson._
 
-object SectionPersistence {
+object SectionPersistence extends Protocols {
   def getAll(implicit session: DBSession): List[Section] = {
     sql"select sectionID, name, jsonSchema from Section".map(rowToSection).list.apply()
   }
@@ -51,8 +47,45 @@ object SectionPersistence {
           """.update.apply()
     Success(section)
   }
-  
+
+  def patchById(implicit session: DBSession, id: String, sectionPatchJson: String): Try[Section] = {
+    val sectionPatch = JsonPatch.parse(sectionPatchJson)
+
+    // Create a 'Patch Section' event
+    sql"insert into Events (eventTypeID, userID, data) values (4, 0, $sectionPatchJson::json)".update.apply();
+
+    // Read the existing section
+    val section = this.getById(session, id)
+    if (section.isEmpty) {
+      Failure(new RuntimeException("No section exists with that ID."))
+    } else {
+      val sectionJson = section.get.toJson
+      val patchedJson = sectionPatch(sectionJson)
+      val patchedSection = patchedJson.convertTo[Section]
+
+      if (id != patchedSection.id) {
+        // TODO: we can do better than RuntimeException here.
+        Failure(new RuntimeException("The patch must not change the section's ID."))
+      } else {
+        val jsonString = patchedSection.jsonSchema match {
+          case Some(jsonSchema) => jsonSchema.compactPrint
+          case None => null
+        }
+        sql"""insert into Section (sectionID, name, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $jsonString::json)
+          on conflict (sectionID) do update
+          set name = ${patchedSection.name}, jsonSchema = $jsonString::json
+          """.update.apply()
+        Success(patchedSection)
+      }
+    }
+  }
+
   def create(implicit session: DBSession, section: Section): Try[Section] = {
+    // Create a 'Create Section' event
+    val sectionJson = section.toJson.compactPrint
+    sql"insert into Events (eventTypeID, userID, data) values (1, 0, $sectionJson::json)".update.apply();
+
+    // Create the actual Section
     try {
       val jsonString = section.jsonSchema match {
         case Some(jsonSchema) => jsonSchema.compactPrint
