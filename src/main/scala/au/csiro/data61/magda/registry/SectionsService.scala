@@ -76,7 +76,7 @@ class SectionsService(system: ActorSystem, materializer: Materializer) extends P
     notes = "The patch should follow IETF RFC 6902 (https://tools.ietf.org/html/rfc6902).")
   @ApiImplicitParams(Array(
     new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the section to be saved."),
-    new ApiImplicitParam(name = "sectionPatch", required = true, dataType = "gnieh.diffson.JsonPatch", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
+    new ApiImplicitParam(name = "sectionPatch", required = true, dataType = "gnieh.diffson.JsonPatchSupport$JsonPatch", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
   ))
   def patchById = patch { path(Segment) { (id: String) => {
     entity(as[JsonPatch]) { sectionPatch =>
