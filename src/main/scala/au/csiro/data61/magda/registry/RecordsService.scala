@@ -68,8 +68,8 @@ class RecordsService(system: ActorSystem, materializer: Materializer) extends Pr
     entity(as[Record]) { record =>
       DB localTx { session =>
         RecordPersistence.putRecordById(session, id, record) match {
-          case Success(section) => {println("**** completed record"); complete(record)}
-          case Failure(exception) => {println("************** failed"); complete(StatusCodes.BadRequest, BadRequest(exception.getMessage)) }
+          case Success(section) => complete(record)
+          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage))
         }
       }
     }

@@ -20,46 +20,21 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
   }
   
   def putById(implicit session: DBSession, id: String, newSection: Section): Try[Section] = {
-    if (id != newSection.id) {
-      // TODO: we can do better than RuntimeException here.
-      return Failure(new RuntimeException("The provided ID does not match the section's id."))
-    }
+    for {
+      _ <- if (id == newSection.id) Success(newSection) else Failure(new RuntimeException("The provided ID does not match the section's ID."))
+      oldSection <- this.getById(session, id) match {
+        case Some(section) => Success(section)
+        case None => Failure(new RuntimeException("No section exists with that ID."))
+      }
+      sectionPatch <- Try {
+        // Diff the old section and the new one
+        val oldSectionJson = oldSection.toJson
+        val newSectionJson = newSection.toJson
 
-    // Read the existing section
-    val oldSection = this.getById(session, id)
-    if (oldSection.isEmpty) {
-      return Failure(new RuntimeException("No section exists with that ID."))
-    }
-
-    // Diff the old section and the new one
-    val oldSectionJson = oldSection.toJson
-    val newSectionJson = newSection.toJson
-
-    val diff = JsonDiff.diff(oldSectionJson, newSectionJson, false)
-    val event = PatchSectionDefinitionEvent(id, diff)
-    val eventString = event.toJson.compactPrint
-
-    // Create a 'Patch Section' event with the diff
-    sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $eventString::json)".update.apply()
-
-    // Patch the old section
-    val patchedSectionJson = diff(oldSectionJson)
-    val patchedSection = patchedSectionJson.convertTo[Section]
-
-    if (id != patchedSection.id) {
-      return Failure(new RuntimeException("The patch must not change the section's ID."))
-    }
-
-    // Write back the modified Section
-    val jsonString = patchedSection.jsonSchema match {
-      case Some(jsonSchema) => jsonSchema.compactPrint
-      case None => null
-    }
-    sql"""insert into Section (sectionID, name, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $jsonString::json)
-      on conflict (sectionID) do update
-      set name = ${patchedSection.name}, jsonSchema = $jsonString::json
-      """.update.apply()
-    Success(patchedSection)
+        JsonDiff.diff(oldSectionJson, newSectionJson, false)
+      }
+      result <- patchById(session, id, sectionPatch)
+    } yield result
   }
 
   def patchById(implicit session: DBSession, id: String, sectionPatch: JsonPatch): Try[Section] = {
@@ -76,7 +51,7 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
         val patchedJson = sectionPatch(sectionJson)
         patchedJson.convertTo[Section]
       }
-      if (id == patchedSection.id)
+      _ <- if (id == patchedSection.id) Success(patchedSection) else Failure(new RuntimeException("The patch must not change the section's ID."))
       _ <- Try {
         val jsonString = patchedSection.jsonSchema match {
           case Some(jsonSchema) => jsonSchema.compactPrint
@@ -92,8 +67,8 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
 
   def create(implicit session: DBSession, section: Section): Try[Section] = {
     // Create a 'Create Section' event
-    val sectionJson = section.toJson.compactPrint
-    sql"insert into Events (eventTypeID, userID, data) values (1, 0, $sectionJson::json)".update.apply();
+    val eventJson = CreateSectionDefinitionEvent(section).toJson.compactPrint
+    sql"insert into Events (eventTypeID, userID, data) values (${CreateSectionDefinitionEvent.ID}, 0, $eventJson::json)".update.apply();
 
     // Create the actual Section
     try {
