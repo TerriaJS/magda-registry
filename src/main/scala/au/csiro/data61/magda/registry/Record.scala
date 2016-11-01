@@ -13,6 +13,6 @@ case class Record(
   @(ApiModelProperty @field)(value = "The name of the record", required = true)
   name: String,
 
-  @(ApiModelProperty @field)(value = "The list of sections included in this record", required = true)
-  sections: List[RecordSection]
+  @(ApiModelProperty @field)(value = "The sections included in this record", required = true)
+  sections: Map[String, JsObject]
 )

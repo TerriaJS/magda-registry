@@ -40,7 +40,7 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
       .list.apply()).headOption
   }
   
-  def getRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String): Option[RecordSection] = {
+  def getRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String): Option[JsObject] = {
     sql"""select RecordSection.sectionID as sectionID, name as sectionName, data from RecordSection
           inner join Section using (sectionID)
           where RecordSection.recordID=$recordID
@@ -61,7 +61,7 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
           set name=${record.name}""".update.apply()
 
     // Update the sections
-    record.sections.foreach(section => putRecordSectionById(session, id, section.id, section))
+    record.sections.foreach(section => putRecordSectionById(session, id, section._1, section._2))
 
     Success(record)
   }
@@ -97,8 +97,8 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
           case anythingElse => None
         }).filterKeys(!_.isEmpty).map({
           // Patch each section
-          case (Some(sectionID), operations) => patchRecordSectionById(session, id, sectionID, JsonPatch(operations.map({
-            // Nake paths in operations relative to the section instead of the record
+          case (Some(sectionID), operations) => (sectionID, patchRecordSectionById(session, id, sectionID, JsonPatch(operations.map({
+            // Make paths in operations relative to the section instead of the record
             case Add("sections" / (name / rest), value) => Add(rest, value)
             case Remove("sections" / (name / rest), old) => Remove(rest, old)
             case Replace("sections" / (name / rest), value, old) => Replace(rest, value, old)
@@ -106,19 +106,21 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
             case Copy("sections" / (sourceName / sourceRest), "sections" / (destName / destRest)) => Copy(sourceRest, destRest)
             case Test("sections" / (name / rest), value) => Test(rest, value)
             case anythingElse => throw new RuntimeException("The patch contains an unsupported operation for section " + sectionID)
-          })))
-          case anythingElse => Failure(new RuntimeException("Section ID is missing (this shouldn't be possible)."))
+          }))))
+          case anythingElse => throw new RuntimeException("Section ID is missing (this shouldn't be possible).")
         })
       }
-      _ <- sectionResults.find(_.isFailure) match {
-        case Some(Failure(e)) => Failure(e)
+      // Report the first failed section, if any
+      _ <- sectionResults.find(_._2.isFailure) match {
+        case Some((sectionID, failure)) => failure
         case anythingElse => Success(record)
       }
-      sections <- Success(sectionResults.map(sectionResult => sectionResult.get))
-    } yield Record(patchedRecord.id, patchedRecord.name, sections.toList)
+      // No failed sections, so unwrap the sections from the Success Trys.
+      sections <- Success(sectionResults.map(section => (section._1, section._2.get)))
+    } yield Record(patchedRecord.id, patchedRecord.name, sections)
   }
 
-  def patchRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, sectionPatch: JsonPatch): Try[RecordSection] = {
+  def patchRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, sectionPatch: JsonPatch): Try[JsObject] = {
     for {
       section <- this.getRecordSectionById(session, recordID, sectionID) match {
         case Some(section) => Success(section)
@@ -129,39 +131,22 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
         sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordSectionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
       }
       patchedSection <- Try {
-        val sectionJson = section.toJson
-        val patchedJson = sectionPatch(sectionJson)
-        patchedJson.convertTo[RecordSection]
+        sectionPatch(section).asJsObject
       }
-      _ <- if (sectionID == patchedSection.id) Success(patchedSection) else Failure(new RuntimeException("The patch must not change the section's ID."))
       _ <- Try {
-        val jsonString = patchedSection.data match {
-          case Some(jsonSchema) => jsonSchema.compactPrint
-          case None => null
-        }
+        val jsonString = patchedSection.compactPrint
         sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values (${recordID}, ${sectionID}, $eventID, $jsonString::json)
              on conflict (recordID, sectionID) do update
              set lastUpdate = $eventID, data = $jsonString::json
              """.update.apply()
       }
     } yield patchedSection
-
-
-    //Success(RecordSection("placeholder", "placeholder", Some(JsObject())))
   }
 
-  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
-    if (sectionID != section.id) {
-      // TODO: we can do better than RuntimeException here.
-      return Failure(new RuntimeException("The provided ID does not match the section's id."))
-    }
-
-    val jsonData = section.data match {
-      case Some(json) => json.compactPrint
-      case None => null
-    }
+  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: JsObject): Try[JsObject] = {
+    val jsonData = section.compactPrint
     sql"""insert into RecordSection (recordID, sectionID, data)
-          values ($recordID, ${section.id}, $jsonData::json)
+          values ($recordID, ${sectionID}, $jsonData::json)
           on conflict (recordID, sectionID) do update
           set data=$jsonData::json""".update.apply()
 
@@ -181,29 +166,26 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
           Failure(new RuntimeException(s"Cannot create record '${record.id}' because a record with that ID already exists."))
         case anythingElse => anythingElse
       }
-      hasSectionFailure <- record.sections.map(createRecordSection(session, record.id, _)).find(_.isFailure) match {
+      hasSectionFailure <- record.sections.map(section => createRecordSection(session, record.id, section._1, section._2)).find(_.isFailure) match {
         case Some(Failure(e)) => Failure(e)
         case anythingElse => Success(record)
       }
     } yield hasSectionFailure
   }
 
-  def createRecordSection(implicit session: DBSession, recordID: String, section: RecordSection): Try[RecordSection] = {
+  def createRecordSection(implicit session: DBSession, recordID: String, sectionID: String, section: JsObject): Try[JsObject] = {
     for {
       eventID <- Try {
-        val eventJson = CreateRecordSectionEvent(section).toJson.compactPrint
+        val eventJson = CreateRecordSectionEvent(recordID, sectionID, section).toJson.compactPrint
         sql"insert into Events (eventTypeID, userID, data) values (${CreateRecordSectionEvent.ID}, 0, $eventJson::json)".updateAndReturnGeneratedKey.apply()
       }
       insertResult <- Try {
-        val jsonData = section.data match {
-          case Some(json) => json.compactPrint
-          case None => null
-        }
-        sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values ($recordID, ${section.id}, $eventID, $jsonData::json)""".update.apply()
+        val jsonData = section.compactPrint
+        sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values ($recordID, ${sectionID}, $eventID, $jsonData::json)""".update.apply()
         section
       } match {
         case Failure(e: SQLException) if e.getSQLState().substring(0, 2) == "23" =>
-          Failure(new RuntimeException(s"Cannot create section '${section.id}' for record '${recordID}' because the record or section does not exist, or because data already exists for that combination of record and section."))
+          Failure(new RuntimeException(s"Cannot create section '${sectionID}' for record '${recordID}' because the record or section does not exist, or because data already exists for that combination of record and section."))
         case anythingElse => anythingElse
       }
     } yield insertResult
@@ -231,20 +213,14 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
               Record(
                 id = recordID,
                 name = recordName,
-                sections = value.filter({ case (_, _, sectionID, _, _) => sectionID != null })
+                sections = value.filter({ case (_, _, sectionID, _, data) => sectionID != null && data.isDefined })
                                 .map({ case (_, _, sectionID, sectionName, data) =>
-                                  RecordSection(
-                                    id = sectionID,
-                                    name = sectionName,
-                                    data = data.map(JsonParser(_).asJsObject))
-                                }))
+                                  (sectionID, JsonParser(data.get).asJsObject)
+                                }).toMap)
           }
   }
   
-  private def rowToSection(rs: WrappedResultSet): RecordSection = {
-    RecordSection(
-        id = rs.string("sectionID"),
-        name = rs.string("sectionName"),
-        data = rs.stringOpt("data").map(JsonParser(_).asJsObject))
+  private def rowToSection(rs: WrappedResultSet): JsObject = {
+    JsonParser(rs.string("data")).asJsObject
   }
 }
