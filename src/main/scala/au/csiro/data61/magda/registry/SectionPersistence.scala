@@ -68,7 +68,7 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
   def create(implicit session: DBSession, section: Section): Try[Section] = {
     // Create a 'Create Section' event
     val eventJson = CreateSectionDefinitionEvent(section).toJson.compactPrint
-    sql"insert into Events (eventTypeID, userID, data) values (${CreateSectionDefinitionEvent.ID}, 0, $eventJson::json)".update.apply();
+    sql"insert into Events (eventTypeID, userID, data) values (${CreateSectionDefinitionEvent.ID}, 0, $eventJson::json)".update.apply()
 
     // Create the actual Section
     try {

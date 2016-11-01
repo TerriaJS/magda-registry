@@ -1,12 +1,15 @@
 package au.csiro.data61.magda.registry
 
 import scalikejdbc._
-import spray.json.JsonParser
+import spray.json._
+
 import scala.util.Try
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 import java.sql.SQLException
 
-object RecordPersistence {
+import gnieh.diffson.sprayJson.DiffsonProtocol
+
+object RecordPersistence extends Protocols with DiffsonProtocol {
   def getAll(implicit session: DBSession): Iterable[RecordSummary] = {
     tuplesToSummaryRecords(sql"""select recordID, Record.name as recordName, sectionID
                                  from Record
@@ -81,22 +84,23 @@ object RecordPersistence {
   }
 
   def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
-    // First create the Record
-    val insertResult = try {
-      Success(sql"""insert into Record (recordID, name) values (${record.id}, ${record.name})""".update.apply())
-    } catch {
-      case e: SQLException if e.getSQLState().substring(0, 2) == "23" =>
-        Failure(new RuntimeException(s"Cannot create record '${record.id}' because a record with that ID already exists."))
-    }
-
-    // Then create the sections
-    insertResult.flatMap({ insertResult: Int =>
-      val sectionResults = record.sections.map(createRecordSection(session, record.id, _))
-      sectionResults.find(_.isFailure) match {
-        case Some(Failure(e)) => Failure(e)
-        case None => Success(record)
+    for {
+      eventID <- Try {
+          val eventJson = CreateRecordEvent(record.id, record.name).toJson.compactPrint
+          sql"insert into Events (eventTypeID, userID, data) values (${CreateRecordEvent.ID}, 0, $eventJson::json)".updateAndReturnGeneratedKey.apply()
       }
-    })
+      insertResult <- Try {
+        sql"""insert into Record (recordID, name, lastUpdate) values (${record.id}, ${record.name}, $eventID)""".update.apply()
+      } match {
+        case Failure(e: SQLException) if e.getSQLState().substring(0, 2) == "23" =>
+          Failure(new RuntimeException(s"Cannot create record '${record.id}' because a record with that ID already exists."))
+        case anythingElse => anythingElse
+      }
+      hasSectionFailure <- record.sections.map(createRecordSection(session, record.id, _)).find(_.isFailure) match {
+        case Some(Failure(e)) => Failure(e)
+        case anythingElse => Success(record)
+      }
+    } yield hasSectionFailure
   }
 
   def createRecordSection(implicit session: DBSession, recordID: String, section: RecordSection): Try[RecordSection] = {

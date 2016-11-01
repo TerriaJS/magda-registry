@@ -33,20 +33,20 @@ CREATE TABLE IF NOT EXISTS Events (
 CREATE TABLE IF NOT EXISTS Record (
     recordID varchar(100) PRIMARY KEY,
     name varchar(1000) NOT NULL,
-    lastUpdate bigserial REFERENCES Events NOT NULL
+    lastUpdate bigint REFERENCES Events NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS Section (
     sectionID varchar(100) PRIMARY KEY,
     name varchar(100) NOT NULL,
-    lastUpdate bigserial REFERENCES Events NOT NULL,
+    lastUpdate bigint REFERENCES Events NOT NULL,
     jsonSchema jsonb
 );
 
 CREATE TABLE IF NOT EXISTS RecordSection (
     recordID varchar(100) REFERENCES Record NOT NULL,
     sectionID varchar(100) REFERENCES Section NOT NULL,
-    lastUpdate bigserial REFERENCES Events NOT NULL,
+    lastUpdate bigint REFERENCES Events NOT NULL,
     data jsonb NOT NULL,
     PRIMARY KEY (recordID, sectionID)
 );
