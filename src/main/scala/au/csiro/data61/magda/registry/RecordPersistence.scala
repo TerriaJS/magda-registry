@@ -7,7 +7,8 @@ import scala.util.Try
 import scala.util.{Failure, Success}
 import java.sql.SQLException
 
-import gnieh.diffson.sprayJson.DiffsonProtocol
+import gnieh.diffson._
+import gnieh.diffson.sprayJson._
 
 object RecordPersistence extends Protocols with DiffsonProtocol {
   def getAll(implicit session: DBSession): Iterable[RecordSummary] = {
@@ -63,6 +64,62 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
     record.sections.foreach(section => putRecordSectionById(session, id, section.id, section))
 
     Success(record)
+  }
+
+  def patchRecordById(implicit session: DBSession, id: String, recordPatch: JsonPatch): Try[Record] = {
+    for {
+      record <- this.getById(session, id) match {
+        case Some(section) => Success(section)
+        case None => Failure(new RuntimeException("No record exists with that ID."))
+      }
+      eventID <- Try {
+        val event = PatchRecordEvent(id, recordPatch).toJson.compactPrint
+        sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+      }
+      patchedRecord <- Try {
+        // Don't include section changes when patching the record itself
+        val recorddOnlyPatch = recordPatch.filter(op => op.path match {
+          case "sections" / rest => false
+          case anythingElse => true
+        })
+
+        val recordJson = record.toJson
+        val patchedJson = recorddOnlyPatch(recordJson)
+        patchedJson.convertTo[Record]
+      }
+      _ <- if (id == patchedRecord.id) Success(patchedRecord) else Failure(new RuntimeException("The patch must not change the record's ID."))
+      _ <- Try {
+        sql"""update Record set name = ${patchedRecord.name}, lastUpdate = $eventID where recordID = $id""".update.apply()
+      }
+      sectionResults <- Try {
+        recordPatch.ops.groupBy(op => op.path match {
+          case "sections" / (name / rest) => Some(name)
+          case anythingElse => None
+        }).filterKeys(!_.isEmpty).map({
+          // Patch each section
+          case (Some(sectionID), operations) => patchRecordSectionById(session, id, sectionID, JsonPatch(operations.map({
+            // Nake paths in operations relative to the section instead of the record
+            case Add("sections" / (name / rest), value) => Add(rest, value)
+            case Remove("sections" / (name / rest), old) => Remove(rest, old)
+            case Replace("sections" / (name / rest), value, old) => Replace(rest, value, old)
+            case Move("sections" / (sourceName / sourceRest), "sections" / (destName / destRest)) => Move(sourceRest, destRest)
+            case Copy("sections" / (sourceName / sourceRest), "sections" / (destName / destRest)) => Copy(sourceRest, destRest)
+            case Test("sections" / (name / rest), value) => Test(rest, value)
+            case anythingElse => throw new RuntimeException("The patch contains an unsupported operation for section " + sectionID)
+          })))
+          case anythingElse => Failure(new RuntimeException("Section ID is missing (this shouldn't be possible)."))
+        })
+      }
+      _ <- sectionResults.find(_.isFailure) match {
+        case Some(Failure(e)) => Failure(e)
+        case anythingElse => Success(record)
+      }
+      sections <- Success(sectionResults.map(sectionResult => sectionResult.get))
+    } yield Record(patchedRecord.id, patchedRecord.name, sections.toList)
+  }
+
+  def patchRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, sectionPatch: JsonPatch): Try[RecordSection] = {
+    Success(RecordSection("placeholder", "placeholder", Some(JsObject())))
   }
 
   def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
