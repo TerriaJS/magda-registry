@@ -43,10 +43,11 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
         case Some(section) => Success(section)
         case None => Failure(new RuntimeException("No section exists with that ID."))
       }
-      patchedSection <- Try {
+      eventID <- Try {
         val event = PatchSectionDefinitionEvent(id, sectionPatch).toJson.compactPrint
-        sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $event::json)".update.apply()
-
+        sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+      }
+      patchedSection <- Try {
         val sectionJson = section.toJson
         val patchedJson = sectionPatch(sectionJson)
         patchedJson.convertTo[Section]
@@ -57,9 +58,9 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
           case Some(jsonSchema) => jsonSchema.compactPrint
           case None => null
         }
-        sql"""insert into Section (sectionID, name, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $jsonString::json)
+        sql"""insert into Section (sectionID, name, lastUpdate, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $eventID, $jsonString::json)
              on conflict (sectionID) do update
-             set name = ${patchedSection.name}, jsonSchema = $jsonString::json
+             set name = ${patchedSection.name}, lastUpdate = $eventID, jsonSchema = $jsonString::json
              """.update.apply()
       }
     } yield patchedSection
@@ -68,7 +69,7 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
   def create(implicit session: DBSession, section: Section): Try[Section] = {
     // Create a 'Create Section' event
     val eventJson = CreateSectionDefinitionEvent(section).toJson.compactPrint
-    sql"insert into Events (eventTypeID, userID, data) values (${CreateSectionDefinitionEvent.ID}, 0, $eventJson::json)".update.apply()
+    val eventID = sql"insert into Events (eventTypeID, userID, data) values (${CreateSectionDefinitionEvent.ID}, 0, $eventJson::json)".updateAndReturnGeneratedKey().apply()
 
     // Create the actual Section
     try {
@@ -76,7 +77,7 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
         case Some(jsonSchema) => jsonSchema.compactPrint
         case None => null
       }
-      sql"insert into Section (sectionID, name, jsonSchema) values (${section.id}, ${section.name}, $jsonString::json)".update.apply()
+      sql"insert into Section (sectionID, name, lastUpdate, jsonSchema) values (${section.id}, ${section.name}, $eventID, $jsonString::json)".update.apply()
       Success(section)
     } catch {
       case e: SQLException => Failure(new RuntimeException("A section with the specified ID already exists."))

@@ -104,18 +104,24 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
   }
 
   def createRecordSection(implicit session: DBSession, recordID: String, section: RecordSection): Try[RecordSection] = {
-    val jsonData = section.data match {
-      case Some(json) => json.compactPrint
-      case None => null
-    }
-
-    try {
-      sql"""insert into RecordSection (recordID, sectionID, data) values ($recordID, ${section.id}, $jsonData::json)""".update.apply()
-      Success(section)
-    } catch {
-      case e: SQLException if e.getSQLState().substring(0, 2) == "23" =>
-        Failure(new RuntimeException(s"Cannot create section '${section.id}' for record '${recordID}' because the record or section does not exist, or because data already exists for that combination of record and section."))
-    }
+    for {
+      eventID <- Try {
+        val eventJson = CreateRecordSectionEvent(section).toJson.compactPrint
+        sql"insert into Events (eventTypeID, userID, data) values (${CreateRecordSectionEvent.ID}, 0, $eventJson::json)".updateAndReturnGeneratedKey.apply()
+      }
+      insertResult <- Try {
+        val jsonData = section.data match {
+          case Some(json) => json.compactPrint
+          case None => null
+        }
+        sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values ($recordID, ${section.id}, $eventID, $jsonData::json)""".update.apply()
+        section
+      } match {
+        case Failure(e: SQLException) if e.getSQLState().substring(0, 2) == "23" =>
+          Failure(new RuntimeException(s"Cannot create section '${section.id}' for record '${recordID}' because the record or section does not exist, or because data already exists for that combination of record and section."))
+        case anythingElse => anythingElse
+      }
+    } yield insertResult
   }
 
   private def recordSummaryRowToTuple(rs: WrappedResultSet) = (rs.string("recordID"), rs.string("recordName"), rs.string("sectionID"))
