@@ -33,5 +33,5 @@ trait Protocols extends DefaultJsonProtocol with DiffsonProtocol {
   implicit val createRecordEventFormat = jsonFormat2(CreateRecordEvent.apply)
   implicit val createRecordSectionEventFormat = jsonFormat1(CreateRecordSectionEvent.apply)
   implicit val patchRecordEventFormat = jsonFormat2(PatchRecordEvent.apply)
-
+  implicit val patchRecordSectionEventFormat = jsonFormat3(PatchRecordSectionEvent.apply)
 }

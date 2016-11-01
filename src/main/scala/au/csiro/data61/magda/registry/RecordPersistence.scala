@@ -119,7 +119,35 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
   }
 
   def patchRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, sectionPatch: JsonPatch): Try[RecordSection] = {
-    Success(RecordSection("placeholder", "placeholder", Some(JsObject())))
+    for {
+      section <- this.getRecordSectionById(session, recordID, sectionID) match {
+        case Some(section) => Success(section)
+        case None => Failure(new RuntimeException("No section exists on that record with that ID."))
+      }
+      eventID <- Try {
+        val event = PatchRecordSectionEvent(recordID, sectionID, sectionPatch).toJson.compactPrint
+        sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordSectionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+      }
+      patchedSection <- Try {
+        val sectionJson = section.toJson
+        val patchedJson = sectionPatch(sectionJson)
+        patchedJson.convertTo[RecordSection]
+      }
+      _ <- if (sectionID == patchedSection.id) Success(patchedSection) else Failure(new RuntimeException("The patch must not change the section's ID."))
+      _ <- Try {
+        val jsonString = patchedSection.data match {
+          case Some(jsonSchema) => jsonSchema.compactPrint
+          case None => null
+        }
+        sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values (${recordID}, ${sectionID}, $eventID, $jsonString::json)
+             on conflict (recordID, sectionID) do update
+             set lastUpdate = $eventID, data = $jsonString::json
+             """.update.apply()
+      }
+    } yield patchedSection
+
+
+    //Success(RecordSection("placeholder", "placeholder", Some(JsObject())))
   }
 
   def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: RecordSection): Try[RecordSection] = {
