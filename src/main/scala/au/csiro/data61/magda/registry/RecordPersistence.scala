@@ -49,21 +49,22 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
       .single.apply()
   }
   
-  def putRecordById(implicit session: DBSession, id: String, record: Record): Try[Record] = {
-    if (id != record.id) {
-      // TODO: we can do better than RuntimeException here.
-      return Failure(new RuntimeException("The provided ID does not match the record's id."))
-    }
+  def putRecordById(implicit session: DBSession, id: String, newRecord: Record): Try[Record] = {
+    for {
+      _ <- if (id == newRecord.id) Success(newRecord) else Failure(new RuntimeException("The provided ID does not match the record's ID."))
+      oldRecord <- this.getById(session, id) match {
+        case Some(record) => Success(record)
+        case None => createRecord(session, newRecord)
+      }
+      recordPatch <- Try {
+        // Diff the old record and the new one
+        val oldRecordJson = oldRecord.toJson
+        val newRecordJson = newRecord.toJson
 
-    // Update the record
-    sql"""insert into Record (recordID, name) values ($id, ${record.name})
-          on conflict (recordID) do update
-          set name=${record.name}""".update.apply()
-
-    // Update the sections
-    record.sections.foreach(section => putRecordSectionById(session, id, section._1, section._2))
-
-    Success(record)
+        JsonDiff.diff(oldRecordJson, newRecordJson, false)
+      }
+      result <- patchRecordById(session, id, recordPatch)
+    } yield result
   }
 
   def patchRecordById(implicit session: DBSession, id: String, recordPatch: JsonPatch): Try[Record] = {
@@ -72,19 +73,17 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
         case Some(section) => Success(section)
         case None => Failure(new RuntimeException("No record exists with that ID."))
       }
+      recordOnlyPatch <- Success(recordPatch.filter(op => op.path match {
+        case "sections" / rest => false
+        case anythingElse => true
+      }))
       eventID <- Try {
-        val event = PatchRecordEvent(id, recordPatch).toJson.compactPrint
+        val event = PatchRecordEvent(id, recordOnlyPatch).toJson.compactPrint
         sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
       }
       patchedRecord <- Try {
-        // Don't include section changes when patching the record itself
-        val recorddOnlyPatch = recordPatch.filter(op => op.path match {
-          case "sections" / rest => false
-          case anythingElse => true
-        })
-
         val recordJson = record.toJson
-        val patchedJson = recorddOnlyPatch(recordJson)
+        val patchedJson = recordOnlyPatch(recordJson)
         patchedJson.convertTo[Record]
       }
       _ <- if (id == patchedRecord.id) Success(patchedRecord) else Failure(new RuntimeException("The patch must not change the record's ID."))
