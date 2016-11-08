@@ -78,8 +78,12 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
         case anythingElse => true
       }))
       eventID <- Try {
-        val event = PatchRecordEvent(id, recordOnlyPatch).toJson.compactPrint
-        sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        if (recordOnlyPatch.ops.length > 0) {
+          val event = PatchRecordEvent(id, recordOnlyPatch).toJson.compactPrint
+          sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        } else {
+          0
+        }
       }
       patchedRecord <- Try {
         val recordJson = record.toJson
@@ -88,7 +92,11 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
       }
       _ <- if (id == patchedRecord.id) Success(patchedRecord) else Failure(new RuntimeException("The patch must not change the record's ID."))
       _ <- Try {
-        sql"""update Record set name = ${patchedRecord.name}, lastUpdate = $eventID where recordID = $id""".update.apply()
+        if (recordOnlyPatch.ops.length > 0) {
+          sql"""update Record set name = ${patchedRecord.name}, lastUpdate = $eventID where recordID = $id""".update.apply()
+        } else {
+          0
+        }
       }
       sectionResults <- Try {
         recordPatch.ops.groupBy(op => op.path match {
@@ -126,18 +134,26 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
         case None => Failure(new RuntimeException("No section exists on that record with that ID."))
       }
       eventID <- Try {
-        val event = PatchRecordSectionEvent(recordID, sectionID, sectionPatch).toJson.compactPrint
-        sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordSectionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        if (sectionPatch.ops.length > 0) {
+          val event = PatchRecordSectionEvent(recordID, sectionID, sectionPatch).toJson.compactPrint
+          sql"insert into Events (eventTypeID, userID, data) values (${PatchRecordSectionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        } else {
+          0
+        }
       }
       patchedSection <- Try {
         sectionPatch(section).asJsObject
       }
       _ <- Try {
-        val jsonString = patchedSection.compactPrint
-        sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values (${recordID}, ${sectionID}, $eventID, $jsonString::json)
-             on conflict (recordID, sectionID) do update
-             set lastUpdate = $eventID, data = $jsonString::json
-             """.update.apply()
+        if (sectionPatch.ops.length > 0) {
+          val jsonString = patchedSection.compactPrint
+          sql"""insert into RecordSection (recordID, sectionID, lastUpdate, data) values (${recordID}, ${sectionID}, $eventID, $jsonString::json)
+               on conflict (recordID, sectionID) do update
+               set lastUpdate = $eventID, data = $jsonString::json
+               """.update.apply()
+        } else {
+          0
+        }
       }
     } yield patchedSection
   }

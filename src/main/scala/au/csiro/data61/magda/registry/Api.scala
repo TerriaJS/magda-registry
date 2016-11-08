@@ -20,10 +20,7 @@ import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.ExceptionHandler
-import akka.http.scaladsl.server.MethodRejection
-import akka.http.scaladsl.server.Rejection
-import akka.http.scaladsl.server.RejectionHandler
+import akka.http.scaladsl.server._
 import akka.pattern.ask
 import akka.stream.Materializer
 import akka.util.Timeout
@@ -33,22 +30,22 @@ import scalikejdbc.config._
 import spray.json._
 import scalikejdbc._
 
-class Api(implicit val config: Config, implicit val system: ActorSystem, implicit val ec: ExecutionContext, implicit val materializer: Materializer) extends CorsDirectives {
+class Api(implicit val config: Config, implicit val system: ActorSystem, implicit val ec: ExecutionContext, implicit val materializer: Materializer) extends CorsDirectives with Protocols {
   val logger = Logging(system, getClass)
 
   implicit def rejectionHandler = RejectionHandler.newBuilder()
     .handleAll[MethodRejection] { rejections =>
-    val methods = rejections map (_.supported)
-    lazy val names = methods map (_.name) mkString ", "
+      val methods = rejections map (_.supported)
+      lazy val names = methods map (_.name) mkString ", "
 
-    cors() {
-      options {
-        complete(s"Supported methods : $names.")
-      } ~
-        complete(MethodNotAllowed,
-          s"HTTP method not allowed, supported methods: $names!")
+      cors() {
+        options {
+          complete(s"Supported methods : $names.")
+        } ~
+          complete(MethodNotAllowed,
+            s"HTTP method not allowed, supported methods: $names!")
+      }
     }
-  }
     .result()
 
   val myExceptionHandler = ExceptionHandler {
@@ -56,7 +53,7 @@ class Api(implicit val config: Config, implicit val system: ActorSystem, implici
       logger.error(e, "Exception encountered")
 
       cors() {
-        complete(HttpResponse(InternalServerError, entity = "You are probably seeing this message because Kevin messed up"))
+        complete(StatusCodes.InternalServerError, au.csiro.data61.magda.registry.BadRequest("The server encountered an unexpected error."))
       }
     }
   }

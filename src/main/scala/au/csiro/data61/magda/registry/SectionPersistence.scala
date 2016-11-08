@@ -44,8 +44,12 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
         case None => Failure(new RuntimeException("No section exists with that ID."))
       }
       eventID <- Try {
-        val event = PatchSectionDefinitionEvent(id, sectionPatch).toJson.compactPrint
-        sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        if (sectionPatch.ops.length > 0) {
+          val event = PatchSectionDefinitionEvent(id, sectionPatch).toJson.compactPrint
+          sql"insert into Events (eventTypeID, userID, data) values (${PatchSectionDefinitionEvent.ID}, 0, $event::json)".updateAndReturnGeneratedKey().apply()
+        } else {
+          0
+        }
       }
       patchedSection <- Try {
         val sectionJson = section.toJson
@@ -54,14 +58,18 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
       }
       _ <- if (id == patchedSection.id) Success(patchedSection) else Failure(new RuntimeException("The patch must not change the section's ID."))
       _ <- Try {
-        val jsonString = patchedSection.jsonSchema match {
-          case Some(jsonSchema) => jsonSchema.compactPrint
-          case None => null
+        if (sectionPatch.ops.length > 0) {
+          val jsonString = patchedSection.jsonSchema match {
+            case Some(jsonSchema) => jsonSchema.compactPrint
+            case None => null
+          }
+          sql"""insert into Section (sectionID, name, lastUpdate, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $eventID, $jsonString::json)
+               on conflict (sectionID) do update
+               set name = ${patchedSection.name}, lastUpdate = $eventID, jsonSchema = $jsonString::json
+               """.update.apply()
+        } else {
+          0
         }
-        sql"""insert into Section (sectionID, name, lastUpdate, jsonSchema) values (${patchedSection.id}, ${patchedSection.name}, $eventID, $jsonString::json)
-             on conflict (sectionID) do update
-             set name = ${patchedSection.name}, lastUpdate = $eventID, jsonSchema = $jsonString::json
-             """.update.apply()
       }
     } yield patchedSection
   }
