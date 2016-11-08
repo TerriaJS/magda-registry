@@ -68,24 +68,6 @@ class RecordSectionsService(system: ActorSystem, materializer: Materializer) ext
     }
   } } }
 
-//  @Path("/{id}")
-//  @ApiOperation(value = "Modify a record by applying a JSON Patch", nickname = "patchById", httpMethod = "PATCH", response = classOf[Section],
-//    notes = "The patch should follow IETF RFC 6902 (https://tools.ietf.org/html/rfc6902).")
-//  @ApiImplicitParams(Array(
-//    new ApiImplicitParam(name = "id", required = true, dataType = "string", paramType = "path", value = "ID of the section to be saved."),
-//    new ApiImplicitParam(name = "recordPatch", required = true, dataType = "gnieh.diffson.JsonPatchSupport$JsonPatch", paramType = "body", value = "The RFC 6902 patch to apply to the section.")
-//  ))
-//  def patchById = patch { path(Segment) { (id: String) => {
-//    entity(as[JsonPatch]) { recordPatch =>
-//      DB localTx { session =>
-//        RecordPersistence.patchRecordById(session, id, recordPatch) match {
-//          case Success(result) => complete(result)
-//          case Failure(exception) => complete(StatusCodes.BadRequest, BadRequest(exception.getMessage))
-//        }
-//      }
-//    }
-//  } } }
-
   @Path("/{sectionID}")
   @ApiOperation(value = "Modify a record section by applying a JSON Patch", nickname = "patchById", httpMethod = "PATCH", response = classOf[JsObject],
     notes = "The patch should follow IETF RFC 6902 (https://tools.ietf.org/html/rfc6902).")

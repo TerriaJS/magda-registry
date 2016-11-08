@@ -24,7 +24,7 @@ object SectionPersistence extends Protocols with DiffsonProtocol {
       _ <- if (id == newSection.id) Success(newSection) else Failure(new RuntimeException("The provided ID does not match the section's ID."))
       oldSection <- this.getById(session, id) match {
         case Some(section) => Success(section)
-        case None => Failure(new RuntimeException("No section exists with that ID."))
+        case None => create(session, newSection)
       }
       sectionPatch <- Try {
         // Diff the old section and the new one
