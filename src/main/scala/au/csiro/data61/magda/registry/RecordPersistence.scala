@@ -142,14 +142,21 @@ object RecordPersistence extends Protocols with DiffsonProtocol {
     } yield patchedSection
   }
 
-  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, section: JsObject): Try[JsObject] = {
-    val jsonData = section.compactPrint
-    sql"""insert into RecordSection (recordID, sectionID, data)
-          values ($recordID, ${sectionID}, $jsonData::json)
-          on conflict (recordID, sectionID) do update
-          set data=$jsonData::json""".update.apply()
+  def putRecordSectionById(implicit session: DBSession, recordID: String, sectionID: String, newSection: JsObject): Try[JsObject] = {
+    for {
+      oldSection <- this.getRecordSectionById(session, recordID, sectionID) match {
+        case Some(record) => Success(record)
+        case None => createRecordSection(session, recordID, sectionID, newSection)
+      }
+      recordSectionPatch <- Try {
+        // Diff the old record section and the new one
+        val oldSectionJson = oldSection.toJson
+        val newSectionJson = newSection.toJson
 
-    Success(section)
+        JsonDiff.diff(oldSectionJson, newSectionJson, false)
+      }
+      result <- patchRecordSectionById(session, recordID, sectionID, recordSectionPatch)
+    } yield result
   }
 
   def createRecord(implicit session: DBSession, record: Record): Try[Record] = {
